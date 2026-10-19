@@ -1,0 +1,118 @@
+// The web interface of a grid operator. What every node shows alike - the
+// frame, the forms, sign-in, logs, DNS, NTS, pins, the certificate store, a
+// commit on the Configuration page - is WWCP_Node's, in the grid operator's
+// colour; what follows is what its points, its limits and its local
+// controllers need.
+@use '@node/styles/node' as * with (
+    $color-accent:       #5b4bb7,
+    $color-accent-dark:  #463a8f
+);
+
+
+// --- Tables ---------------------------------------------------------------
+
+table.records.grid-table {
+
+    th.number, td.number {
+        text-align:            right;
+        white-space:           nowrap;
+        font-variant-numeric:  tabular-nums;
+    }
+
+    tbody tr.clickable { cursor: pointer; }
+    tbody tr.clickable:hover td { background: $color-bg; }
+
+    td.actions {
+        white-space:  nowrap;
+        text-align:   right;
+    }
+
+    .mono { font-family: $font-mono; }
+
+}
+
+.mono {
+    font-family:  $font-mono;
+    word-break:   break-all;
+}
+
+
+// --- Forms of two columns -------------------------------------------------
+
+.form-grid {
+
+    display:                grid;
+    grid-template-columns:  repeat(auto-fit, minmax(13rem, 1fr));
+    gap:                    0.75rem 1rem;
+
+    label.wide { grid-column: 1 / -1; }
+
+}
+
+
+// --- The state of a limit -------------------------------------------------
+
+.limit-state {
+
+    display:         inline-block;
+    border-radius:   999px;
+    padding:         0 0.5rem;
+    font-size:       0.75rem;
+    font-weight:     600;
+    border:          1px solid currentColor;
+
+    &.state-scheduled  { color: $color-warn; }
+    &.state-active     { color: $color-accent; }
+    &.state-over       { color: $color-muted; }
+
+}
+
+
+// --- What is said once: a secret, the party ---------------------------------
+
+.secret-box {
+
+    border:         1px solid $color-warn;
+    background:     $color-warn-bg;
+    border-radius:  $radius;
+    padding:        0.75rem 1rem;
+    margin-bottom:  1rem;
+
+    .kv { margin: 0.2rem 0; }
+
+}
+
+textarea.json-box {
+    width:        100%;
+    min-height:   9rem;
+    font-family:  $font-mono;
+    font-size:    0.8rem;
+}
+
+
+// --- The steps of a publication ---------------------------------------------
+
+ul.publication-steps {
+
+    list-style:  none;
+    margin:      0.5rem 0;
+    padding:     0;
+
+    li {
+        padding:        0.3rem 0;
+        border-bottom:  1px solid $color-border;
+    }
+
+    .step-kind {
+        display:         inline-block;
+        min-width:       5.5rem;
+        font-weight:     600;
+        text-transform:  uppercase;
+        font-size:       0.75rem;
+    }
+
+    .step-untouched { color: $color-muted; }
+    .step-remove .step-kind { color: $color-error; }
+    .step-add    .step-kind { color: $color-ok; }
+
+}
