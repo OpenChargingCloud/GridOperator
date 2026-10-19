@@ -312,7 +312,7 @@ namespace cloud.charging.open.GridOperator
                               new JProperty("gridOperatorId",        Own.Id.ToString()),
                               new JProperty("gridConnectionPoints",  Own.Entity.GridConnectionPoints.Count),
                               new JProperty("roamingNetwork",        RoamingNetworkSettings.IsSet ? RoamingNetworkSettings.URL : "none"),
-                              new JProperty("openADRVTN",            OpenADRVTNURL),
+                              new JProperty("VTN",                   OpenADRVTNURL),
                               new JProperty("localControllers",      OpenADR.Logins().Count)
                           )));
 

@@ -212,7 +212,7 @@ namespace cloud.charging.open.GridOperator.Tests
             Assert.Multiple(() => {
                 Assert.That(first.Name,                                      Is.EqualTo("gridOperator"));
                 Assert.That(first.Value["gridOperatorId"]?.Value<String>(),  Is.EqualTo("DE*SWJ"));
-                Assert.That(first.Value["openADRVTN"]?.Value<String>(),      Does.EndWith("/openadr3/"));
+                Assert.That(first.Value["VTN"]?.Value<String>(),             Does.EndWith("/openadr3/"));
             });
 
         }
