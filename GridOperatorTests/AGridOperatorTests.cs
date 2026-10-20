@@ -52,7 +52,7 @@ namespace cloud.charging.open.GridOperator.Tests
         /// A configuration without time servers, and with the grid operator it
         /// is to be at its first start.
         /// </summary>
-        protected const String  Configuration  = """{ "nts": { "enabled": false }, "gridOperator": { "@id": "DE*SWJ", "name": "Netze Beispielstadt" } }""";
+        protected const String  Configuration  = """{ "nts": { "groups": { "legal": { "enabled": false } } }, "gridOperator": { "@id": "DE*SWJ", "name": "Netze Beispielstadt" } }""";
 
         protected String         directory     = "";
         protected GridOperator?  gridOperator;

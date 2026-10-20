@@ -115,7 +115,7 @@ namespace cloud.charging.open.GridOperator.Tests
             var signingKey   = first.Own.SigningKey.Id;
             var identityKey  = first.Own.IdentityKey.Id;
 
-            File.WriteAllText(Path.Combine(directory, "configuration.json"), """{ "nts": { "enabled": false }, "gridOperator": { "@id": "DE*ABC" } }""");
+            File.WriteAllText(Path.Combine(directory, "configuration.json"), """{ "nts": { "groups": { "legal": { "enabled": false } } }, "gridOperator": { "@id": "DE*ABC" } }""");
 
             var again = await Restarted();
 
@@ -141,7 +141,7 @@ namespace cloud.charging.open.GridOperator.Tests
         public void WithoutTheSectionItNamesItselfByItsKey()
         {
 
-            var grid = GridOperatorFrom("""{ "nts": { "enabled": false } }""");
+            var grid = GridOperatorFrom("""{ "nts": { "groups": { "legal": { "enabled": false } } } }""");
 
             Assert.That(grid.Own.Id.ToString(), Is.EqualTo("DE*" + grid.Own.IdentityKey.Id[..3].ToUpperInvariant()));
 
