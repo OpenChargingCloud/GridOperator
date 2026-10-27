@@ -38,8 +38,8 @@ export interface Configuration extends NodeConfiguration {
     gridOperator:  Record<string, unknown>;
 }
 
-/** What a certificate in the store is for: the roots it believes, the server certificates it holds a server to, and who it is as a client. */
-export type CertificateKind = 'tlsRoot' | 'tlsServer' | 'tlsIdentity';
+/** What a certificate in the store is for: the roots it believes, the server certificates it holds a server to, who it is as a client, and what its web interface shows over HTTPS. */
+export type CertificateKind = 'tlsRoot' | 'tlsServer' | 'tlsIdentity' | 'tlsServerIdentity';
 
 /** One certificate in the store. */
 export type Certificate = NodeCertificate<CertificateKind>;

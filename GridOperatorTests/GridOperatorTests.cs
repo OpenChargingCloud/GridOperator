@@ -71,9 +71,9 @@ namespace cloud.charging.open.GridOperator.Tests
         #region WhatItKeeps()
 
         /// <summary>
-        /// The roots it believes, the server certificates it holds a server to
-        /// and who it is as a client - and neither a root of clients nor
-        /// anything of ISO 15118.
+        /// The roots it believes, the server certificates it holds a server to,
+        /// who it is as a client and the identity its web interface shows over
+        /// HTTPS - and neither a root of clients nor anything of ISO 15118.
         /// </summary>
         [Test]
         public void WhatItKeeps()
@@ -82,7 +82,7 @@ namespace cloud.charging.open.GridOperator.Tests
             var store = GridOperatorFrom().Certificates;
 
             Assert.Multiple(() => {
-                Assert.That(store.Kinds, Is.EqualTo(new[] { CertificateKind.TLSRoot, CertificateKind.TLSServer, CertificateKind.TLSIdentity }));
+                Assert.That(store.Kinds, Is.EqualTo(new[] { CertificateKind.TLSRoot, CertificateKind.TLSServer, CertificateKind.TLSIdentity, CertificateKind.TLSServerIdentity }));
                 Assert.That(store.Kinds.Intersect(CertificateKindExtensions.ISO15118), Is.Empty);
             });
 

@@ -113,18 +113,26 @@ namespace cloud.charging.open.GridOperator
 
         /// <summary>
         /// The kinds of certificate the grid operator's store keeps: the roots
-        /// it believes, the server certificates it holds a server to, and who
-        /// it is as a client - of a roaming hub, say.
+        /// it believes, the server certificates it holds a server to, who it is
+        /// as a client - of a roaming hub, say - and the identity its web
+        /// interface shows over HTTPS.
         /// </summary>
         /// <remarks>
         /// The local controllers sign in with the client credentials of
         /// OpenADR 3, not with a certificate, so there is no root of clients to
         /// keep; and nothing of ISO 15118, which is a vehicle's.
+        ///
+        /// The TLS server identity is what the web interface, the JSON API and
+        /// the OpenADR 3 VTN show where the "web" section says "tls": {
+        /// "certificate": "store" }, or --https - kept from the start, so that
+        /// --import-certificate tlsServerIdentity=&lt;file&gt; puts it in at the
+        /// same start that asks for it.
         /// </remarks>
         public static readonly      IReadOnlyList<CertificateKind>  CertificateKinds  = [
                                                                                           CertificateKind.TLSRoot,
                                                                                           CertificateKind.TLSServer,
-                                                                                          CertificateKind.TLSIdentity
+                                                                                          CertificateKind.TLSIdentity,
+                                                                                          CertificateKind.TLSServerIdentity
                                                                                       ];
 
         #endregion
@@ -167,6 +175,7 @@ namespace cloud.charging.open.GridOperator
         /// <param name="BridgeDebugLog">Whether what the libraries below write with DebugX is picked up.</param>
         /// <param name="TimeProvider">The clock, or null for the system one.</param>
         /// <param name="SSH">What the program says about serving the command line over SSH.</param>
+        /// <param name="Web">What the program says of HTTPS and of the reverse proxies in front - --https, --https-cert, --redirect-port and --trusted-proxy - over the "web" section of the configuration file; nothing by default, and then the file alone says it.</param>
         public GridOperator(IIPAddress?            HTTPHostname       = null,
                             IPPort?                HTTPPort           = null,
                             HTTPServer?            HTTPServer         = null,
@@ -185,7 +194,8 @@ namespace cloud.charging.open.GridOperator
                             String?                LogPath            = null,
                             Boolean                BridgeDebugLog     = true,
                             TimeProvider?          TimeProvider       = null,
-                            SSHSettings?           SSH                = null)
+                            SSHSettings?           SSH                = null,
+                            WebConfiguration?      Web                = null)
 
             : base(Kind:               GridOperatorKind,
                    Version:            typeof(GridOperator).Assembly.GetName().Version?.ToString(3) ?? "0.0.0",
@@ -210,7 +220,14 @@ namespace cloud.charging.open.GridOperator
                    LogPath:            LogPath,
                    BridgeDebugLog:     BridgeDebugLog,
                    TimeProvider:       TimeProvider,
-                   SSH:                SSH)
+                   SSH:                SSH,
+
+                   // HTTPS of the grid operator's own, or the proxies in front
+                   // believed: with --any, which the local controllers need,
+                   // the sign-in and the VTN's client secrets would otherwise
+                   // cross the network in the clear - see the node's "web"
+                   // section.
+                   Web:                Web)
 
         {
 

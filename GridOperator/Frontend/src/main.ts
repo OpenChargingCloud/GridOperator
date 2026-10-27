@@ -39,7 +39,10 @@ startNode({
             nodeMenu.nts,
             nodeMenu.ssh,
             nodeMenu.certificates,
-            nodeMenu.identities
+            nodeMenu.identities,
+            // What the web interface shows over HTTPS, where the "web"
+            // section says "tls": { "certificate": "store" }.
+            nodeMenu.serverIdentities
         ]),
         nodeMenu.logs
     ],
