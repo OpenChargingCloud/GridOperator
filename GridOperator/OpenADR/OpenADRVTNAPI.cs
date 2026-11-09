@@ -204,7 +204,7 @@ namespace cloud.charging.open.GridOperator.OpenADR
 
             => Task.FromResult(
                    JSON(Request, HTTPStatusCode.OK, new JObject(
-                       new JProperty("tokenURL", GridOperator.OpenADRTokenURL)
+                       new JProperty("tokenURL", GridOperator.OpenADRTokenURLFor(Request))
                    ))
                );
 
@@ -469,7 +469,7 @@ namespace cloud.charging.open.GridOperator.OpenADR
             }
 
             Refused = Problem(Request, HTTPStatusCode.Unauthorized, "Unauthorized",
-                              $"Sign in first: a bearer token from {GridOperator.OpenADRTokenURL}, for the client credentials of a local controller.");
+                              $"Sign in first: a bearer token from {GridOperator.OpenADRTokenURLFor(Request)}, for the client credentials of a local controller.");
 
             return null;
 

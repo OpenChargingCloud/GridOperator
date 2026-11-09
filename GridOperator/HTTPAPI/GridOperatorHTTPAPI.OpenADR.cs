@@ -40,7 +40,7 @@ namespace cloud.charging.open.GridOperator
                 return Task.FromResult(refused);
 
             return Task.FromResult(
-                       JSONResponse(Request, HTTPStatusCode.OK, GridOperator.OpenADRJSON())
+                       JSONResponse(Request, HTTPStatusCode.OK, GridOperator.OpenADRJSON(Request))
                    );
 
         }
@@ -58,8 +58,8 @@ namespace cloud.charging.open.GridOperator
 
             return Task.FromResult(
                        JSONResponse(Request, HTTPStatusCode.OK, new JObject(
-                           new JProperty("tokenURL",          GridOperator.OpenADRTokenURL),
-                           new JProperty("vtnURL",            GridOperator.OpenADRVTNURL),
+                           new JProperty("tokenURL",          GridOperator.OpenADRTokenURLFor(Request)),
+                           new JProperty("vtnURL",            GridOperator.OpenADRVTNURLFor(Request)),
                            new JProperty("localControllers",  new JArray(GridOperator.OpenADR.Logins().Select(GridOperator.LocalControllerJSON)))
                        ))
                    );
@@ -88,7 +88,7 @@ namespace cloud.charging.open.GridOperator
                 return Task.FromResult(Refused(Request, refusal, error));
 
             return Task.FromResult(
-                       JSONResponse(Request, HTTPStatusCode.Created, WithCredentials(GridOperator.LocalControllerJSON(login), login.VENName, secret))
+                       JSONResponse(Request, HTTPStatusCode.Created, WithCredentials(Request, GridOperator.LocalControllerJSON(login), login.VENName, secret))
                    );
 
         }
@@ -106,7 +106,7 @@ namespace cloud.charging.open.GridOperator
                 return Task.FromResult(Refused(Request, refusal, error));
 
             return Task.FromResult(
-                       JSONResponse(Request, HTTPStatusCode.OK, WithCredentials(GridOperator.LocalControllerJSON(login), login.VENName, secret))
+                       JSONResponse(Request, HTTPStatusCode.OK, WithCredentials(Request, GridOperator.LocalControllerJSON(login), login.VENName, secret))
                    );
 
         }
@@ -198,19 +198,20 @@ namespace cloud.charging.open.GridOperator
         #endregion
 
 
-        #region (private) WithCredentials(JSON, ClientId, Secret)
+        #region (private) WithCredentials(Request, JSON, ClientId, Secret)
 
         /// <summary>
         /// A local controller, and what it signs in with: the one answer that says its secret.
         /// </summary>
-        private JObject WithCredentials(JObject  JSON,
-                                        String   ClientId,
-                                        String   Secret)
+        private JObject WithCredentials(HTTPRequest  Request,
+                                        JObject      JSON,
+                                        String       ClientId,
+                                        String       Secret)
         {
 
             JSON.Add(new JProperty("credentials", new JObject(
-                         new JProperty("tokenURL",      GridOperator.OpenADRTokenURL),
-                         new JProperty("vtnURL",        GridOperator.OpenADRVTNURL),
+                         new JProperty("tokenURL",      GridOperator.OpenADRTokenURLFor(Request)),
+                         new JProperty("vtnURL",        GridOperator.OpenADRVTNURLFor(Request)),
                          new JProperty("clientID",      ClientId),
                          new JProperty("clientSecret",  Secret)
                      )));

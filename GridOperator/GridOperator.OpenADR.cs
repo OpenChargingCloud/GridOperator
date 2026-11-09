@@ -18,10 +18,12 @@
 #region Usings
 
 using System.Diagnostics.CodeAnalysis;
+using System.Text.RegularExpressions;
 
 using Newtonsoft.Json.Linq;
 
 using org.GraphDefined.Vanaheimr.Illias;
+using org.GraphDefined.Vanaheimr.Hermod.HTTP;
 
 using cloud.charging.open.protocols.OpenADRv3;
 
@@ -76,6 +78,64 @@ namespace cloud.charging.open.GridOperator
         /// </summary>
         public String        OpenADRTokenURL
             => OpenADRVTNURL + "auth/token";
+
+        #endregion
+
+
+        #region OpenADRVTNURLFor(Request) / OpenADRTokenURLFor(Request)
+
+        /// <summary>
+        /// A host as a URL may carry it: a name or an address in brackets,
+        /// with a port or without - and nothing that would end the authority
+        /// of the URL and begin a path, a query or a user somewhere else.
+        /// </summary>
+        private static readonly Regex URLAuthority = new (@"^(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9][A-Za-z0-9.-]{0,252})(:[0-9]{1,5})?$",
+                                                          RegexOptions.CultureInvariant);
+
+        /// <summary>
+        /// Where the OpenADR 3 VTN is for whoever sent the given request, with a
+        /// slash at its end: at the name it asked for - as a trusted proxy in
+        /// front of this grid operator says it, or as its own Host says it -
+        /// over HTTPS where its own leg was HTTPS.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// What <see cref="OpenADRVTNURL"/> says is where this grid operator
+        /// listens: 127.0.0.1 behind nginx, 0.0.0.0 with --any - an address no
+        /// local controller out there reaches. The one asking reached it, and
+        /// by the name it asked for, a local controller reaches it too.
+        /// </para>
+        /// <para>
+        /// A Host that is no host - with a slash, an @ or a space in it - is
+        /// not repeated: the listening address is said instead. A proxy that
+        /// puts the grid operator below a path of its own is not followed;
+        /// it serves it at the path the grid operator itself has.
+        /// </para>
+        /// </remarks>
+        /// <param name="Request">An HTTP request.</param>
+        public String OpenADRVTNURLFor(HTTPRequest? Request)
+        {
+
+            if (Request is null)
+                return OpenADRVTNURL;
+
+            var host = (ProxyHostOf(Request) ?? Request.GetHeaderField("Host"))?.Trim();
+
+            if (host is null || !URLAuthority.IsMatch(host))
+                return OpenADRVTNURL;
+
+            return $"{(ReachedOverHTTPS(Request) ? "https" : "http")}://{host}{BasePathText}/{OpenADRVTNAPI.PathSegment}/";
+
+        }
+
+        /// <summary>
+        /// Where a local controller gets its token, for whoever sent the given
+        /// request - see <see cref="OpenADRVTNURLFor"/>.
+        /// </summary>
+        /// <param name="Request">An HTTP request.</param>
+        public String OpenADRTokenURLFor(HTTPRequest? Request)
+
+            => OpenADRVTNURLFor(Request) + "auth/token";
 
         #endregion
 
@@ -148,19 +208,21 @@ namespace cloud.charging.open.GridOperator
 
         #endregion
 
-        #region OpenADRJSON()
+        #region OpenADRJSON(Request = null)
 
         /// <summary>
-        /// What the OpenADR page leads with: where the VTN is, its program, and how much it has.
+        /// What the OpenADR page leads with: where the VTN is - for whoever asks,
+        /// see <see cref="OpenADRVTNURLFor"/> - its program, and how much it has.
         /// </summary>
-        public JObject OpenADRJSON()
+        /// <param name="Request">The request it answers, if any.</param>
+        public JObject OpenADRJSON(HTTPRequest? Request = null)
         {
 
             var now = TimeProvider.GetUtcNow();
 
             return new JObject(
-                       new JProperty("vtnURL",            OpenADRVTNURL),
-                       new JProperty("tokenURL",          OpenADRTokenURL),
+                       new JProperty("vtnURL",            OpenADRVTNURLFor(Request)),
+                       new JProperty("tokenURL",          OpenADRTokenURLFor(Request)),
                        new JProperty("program",           ProgramJSON()),
                        new JProperty("kinds",             new JArray(GridEvent.Kinds)),
                        new JProperty("unit",              GridEvent.Unit),

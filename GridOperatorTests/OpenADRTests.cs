@@ -40,6 +40,12 @@ namespace cloud.charging.open.GridOperator.Tests
     public class OpenADRTests : AGridOperatorTests
     {
 
+        /// <summary>
+        /// A grid operator behind nginx on the same machine.
+        /// </summary>
+        private const String BehindTheLoopback = """{ "nts": { "groups": { "legal": { "enabled": false } } }, "gridOperator": { "@id": "DE*SWJ", "name": "Netze Beispielstadt" }, "web": { "trustedProxies": [ "127.0.0.1", "::1" ] } }""";
+
+
         #region (helper) AGridWithTwoPoints()
 
         /// <summary>
@@ -292,6 +298,105 @@ namespace cloud.charging.open.GridOperator.Tests
             Assert.That(status, Is.EqualTo(HttpStatusCode.Unauthorized));
 
             #endregion
+
+        }
+
+        #endregion
+
+
+        #region (helper) TokenURLAsked(Headers)
+
+        /// <summary>
+        /// The token URL GET auth/server says to a request with the given headers.
+        /// </summary>
+        private async Task<String?> TokenURLAsked(params (String Name, String Value)[] Headers)
+        {
+
+            using var vtn     = Anonymous();
+            using var request = new HttpRequestMessage(HttpMethod.Get, "openadr3/auth/server");
+
+            foreach (var (name, value) in Headers)
+            {
+                if (name == "Host")
+                    request.Headers.Host = value;
+                else
+                    request.Headers.TryAddWithoutValidation(name, value);
+            }
+
+            var response = await vtn.SendAsync(request);
+            var text     = await response.Content.ReadAsStringAsync();
+
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK), text);
+
+            return JObject.Parse(text)["tokenURL"]?.Value<String>();
+
+        }
+
+        #endregion
+
+        #region BehindATrustedProxyTheTokenURLIsTheOneOutThere()
+
+        /// <summary>
+        /// Behind nginx, the token URL is where the local controllers reach
+        /// the grid operator - the host and the scheme the proxy says - and not
+        /// the loopback address it listens on.
+        /// </summary>
+        [Test]
+        public async Task BehindATrustedProxyTheTokenURLIsTheOneOutThere()
+        {
+
+            await TestPorts.StartedOnFreshPorts(() => GridOperatorFrom(BehindTheLoopback));
+
+            Assert.That(await TokenURLAsked(("X-Forwarded-Proto", "https"), ("X-Forwarded-Host", "dso.example.org")),
+                        Is.EqualTo("https://dso.example.org/openadr3/auth/token"));
+
+            Assert.That(await TokenURLAsked(("X-Forwarded-Proto", "https"), ("X-Forwarded-Host", "dso.example.org:8443")),
+                        Is.EqualTo("https://dso.example.org:8443/openadr3/auth/token"),
+                        "a port the proxy names is kept");
+
+            // nginx with "proxy_set_header Host $host" and no X-Forwarded-Host.
+            Assert.That(await TokenURLAsked(("X-Forwarded-Proto", "https"), ("Host", "dso.example.org")),
+                        Is.EqualTo("https://dso.example.org/openadr3/auth/token"));
+
+        }
+
+        #endregion
+
+        #region AHostThatIsNoHostIsNotRepeated()
+
+        /// <summary>
+        /// A host with a path, a user or a space in it ends the URL somewhere
+        /// else: the listening address is said instead.
+        /// </summary>
+        [Test]
+        public async Task AHostThatIsNoHostIsNotRepeated()
+        {
+
+            var grid = await TestPorts.StartedOnFreshPorts(() => GridOperatorFrom(BehindTheLoopback));
+
+            foreach (var host in new[] { "evil.example/steal?", "user@evil.example", "dso.example.org evil", "dso.example.org:99999999" })
+                Assert.That(await TokenURLAsked(("X-Forwarded-Proto", "https"), ("X-Forwarded-Host", host)),
+                            Is.EqualTo(grid.OpenADRTokenURL),
+                            host);
+
+        }
+
+        #endregion
+
+        #region WithoutATrustedProxyNobodyIsBelieved()
+
+        /// <summary>
+        /// Without a trusted proxy, what a client says of a proxy changes
+        /// nothing: the token URL is at the Host it asked for, over HTTP.
+        /// </summary>
+        [Test]
+        public async Task WithoutATrustedProxyNobodyIsBelieved()
+        {
+
+            await TestPorts.StartedOnFreshPorts(() => GridOperatorFrom());
+
+            Assert.That(await TokenURLAsked(("X-Forwarded-Proto", "https"), ("X-Forwarded-Host", "dso.example.org")),
+                        Is.EqualTo($"http://127.0.0.1:{address!.Port}/openadr3/auth/token"));
 
         }
 
