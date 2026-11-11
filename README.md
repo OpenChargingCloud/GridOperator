@@ -33,9 +33,15 @@ the libraries it needs, builds it, and runs its tests.
 | `GridOperator/GridOperator.POI.cs` | the grid operator and its grid connection points, changed |
 | `GridOperator/GridOperator.RoamingNetwork.cs` | the roaming network it publishes to, and the publication: GET of its head, COMMIT of a signed change set |
 | `GridOperator/OpenADR/` | the local controllers that may sign in, the limits, the store they are kept in, and the VTN at `/openadr3` |
+| `GridOperator/CommandLine/` | its command line, at the console and over SSH: every node's commands, and `gridOperator`, `gridConnectionPoints`, `localControllers`, `limits` and `publish` |
 | `GridOperator/HTTPAPI/` | the JSON API: every node's, and `v1/gridOperator`, `v1/gridConnectionPoints`, `v1/configuration/roamingNetwork`, `v1/roamingNetwork/publication` and `v1/openADR/…` |
 | `GridOperator/Frontend/` | the web interface, bundled by webpack with what every node shares |
-| `GridOperatorTests/` | what kind of node it is, its keys across a restart, the points, the publication - in memory and over HTTP to the POI API a hub serves -, the VTN as a local controller sees it, the API with its roles, and WWCP_Node's conformance suite asked of a grid operator |
+| `GridOperatorTests/` | what kind of node it is, its keys across a restart, the points, the publication - in memory and over HTTP to the POI API a hub serves -, the VTN as a local controller sees it, the API with its roles, the command line, and WWCP_Node's conformance suite asked of a grid operator |
+
+Whoever signs in over SSH gets the command line of the grid operator, whichever program runs it: the commands
+every node has, and beside them what only a grid operator can be told. They are this library's, in
+`GridOperator/CommandLine/`, and not the program's, so that a grid operator run by a test or by another program
+can be told the same as one run by GridOperatorCLI.
 
 ### The OpenADR 3 VTN, as a local controller uses it
 

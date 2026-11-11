@@ -31,6 +31,7 @@ using cloud.charging.open.protocols.WWCP.Node.Configuration;
 using cloud.charging.open.protocols.WWCP.Node.SecureShell;
 
 using cloud.charging.open.GridOperator.OpenADR;
+using cloud.charging.open.GridOperator.CommandLine;
 
 #endregion
 
@@ -282,6 +283,16 @@ namespace cloud.charging.open.GridOperator
                            APIPath:       this.HTTPRootPath,
                            Version:       Version
                        );
+
+            #endregion
+
+            #region What somebody signed in over SSH gets
+
+            // A grid operator's command line, with its commands beside the
+            // node's - whichever program runs this grid operator, and not only
+            // GridOperatorCLI. Before the node starts, as the node asks; a
+            // program with a command line of its own sets another after this.
+            CommandLines = (terminal, caller) => new GridOperatorCLI(this, terminal, caller);
 
             #endregion
 
