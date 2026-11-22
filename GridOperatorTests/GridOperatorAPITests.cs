@@ -17,6 +17,7 @@
 
 #region Usings
 
+using org.GraphDefined.Vanaheimr.Illias;
 using System.Net;
 
 using Newtonsoft.Json.Linq;
@@ -47,10 +48,10 @@ namespace cloud.charging.open.GridOperator.Tests
 
             await TestPorts.StartedOnFreshPorts(() => GridOperatorFrom());
 
-            using var planner     = await SignedInAs("planner1",    "planner");
-            using var dispatcher  = await SignedInAs("dispatcher1", "dispatcher");
-            using var viewer      = await SignedInAs("viewer1",     "viewer");
-            using var admin       = await SignedInAs("admin1",      "systemadmin");
+            using var planner     = await SignedInAs(User_Id.Parse("planner1"),    "planner");
+            using var dispatcher  = await SignedInAs(User_Id.Parse("dispatcher1"), "dispatcher");
+            using var viewer      = await SignedInAs(User_Id.Parse("viewer1"),     "viewer");
+            using var admin       = await SignedInAs(User_Id.Parse("admin1"),      "systemadmin");
 
             #region The grid operator and its points
 

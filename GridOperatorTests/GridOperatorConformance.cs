@@ -46,7 +46,7 @@ namespace cloud.charging.open.GridOperator.Tests
             File.WriteAllText(file, Configuration.ToString());
 
             return new GridOperator(
-                       HTTPPort:          IPPort.Parse(TestPorts.Free()),
+                       HTTPPort:          TestPorts.Free(),
                        AccountsPath:      Path.Combine(Directory, "accounts"),
                        ConfigFile:        new WWCPConfigFile(file),
                        CertificatesPath:  Path.Combine(Directory, "certificates"),

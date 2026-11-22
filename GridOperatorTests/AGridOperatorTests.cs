@@ -112,7 +112,7 @@ namespace cloud.charging.open.GridOperator.Tests
                 File.WriteAllText(file, ConfigurationText ?? Configuration);
 
             gridOperator  = new GridOperator(
-                                HTTPPort:          IPPort.Parse(port),
+                                HTTPPort:          port,
                                 AccountsPath:      Path.Combine(directory, "accounts"),
                                 ConfigFile:        new WWCPConfigFile(file),
                                 CertificatesPath:  Path.Combine(directory, "certificates"),
@@ -153,7 +153,7 @@ namespace cloud.charging.open.GridOperator.Tests
         /// A client signed in with a password as an account made for the
         /// purpose, in the group of the given role.
         /// </summary>
-        protected async Task<HttpClient> SignedInAs(String Name, String Role)
+        protected async Task<HttpClient> SignedInAs(User_Id Name, String Role)
         {
 
             var password = "correct-horse-battery-" + Guid.NewGuid().ToString("N")[..8];
@@ -162,8 +162,8 @@ namespace cloud.charging.open.GridOperator.Tests
                         organization is Organization, Is.True, "the grid operator's organization is not there");
 
             var account = await gridOperator.ExtAPI.CreateUser(
-                                    User_Id.Parse(Name),
-                                    I18NString.Create(Languages.en, Name),
+                                    Name,
+                                    I18NString.Create(Languages.en, Name.ToString()),
                                     SimpleEMailAddress.Parse($"{Name}@localhost"),
                                     User2OrganizationEdgeLabel.IsMember,
                                     (Organization) organization!,
@@ -176,7 +176,7 @@ namespace cloud.charging.open.GridOperator.Tests
                                 );
 
             Assert.That(account, Is.Not.Null);
-            Assert.That(gridOperator.ExtAPI.TryGetUser(User_Id.Parse(Name), out var stored), Is.True);
+            Assert.That(gridOperator.ExtAPI.TryGetUser(Name, out var stored), Is.True);
             Assert.That(gridOperator.ExtAPI.TryGetUserGroup(UserGroup_Id.Parse(Role), out var group), Is.True, $"the grid operator has no group '{Role}'");
             Assert.That((await gridOperator.ExtAPI.AddUserToUserGroup((User) stored!, User2UserGroupEdgeLabel.IsMember, (UserGroup) group!)).IsSuccess, Is.True);
 
