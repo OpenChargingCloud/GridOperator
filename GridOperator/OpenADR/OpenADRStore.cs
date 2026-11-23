@@ -410,6 +410,61 @@ namespace cloud.charging.open.GridOperator.OpenADR
             }
         }
 
+        /// <summary>
+        /// Put the given report where the one of the same identification is,
+        /// if the same client made that one.
+        /// </summary>
+        /// <param name="Report">The changed report, with its identification and its clientID.</param>
+        /// <returns>The report it replaced, or null where there was none of that client.</returns>
+        public Report? TryReplaceReport(Report Report)
+        {
+            lock (storeLock)
+            {
+
+                for (var node = reports.First; node is not null; node = node.Next)
+                {
+                    if (node.Value.Id == Report.Id &&
+                        node.Value.ClientID == Report.ClientID)
+                    {
+                        var replaced = node.Value;
+                        node.Value = Report;
+                        return replaced;
+                    }
+                }
+
+                return null;
+
+            }
+        }
+
+        /// <summary>
+        /// Forget the report of the given identification, if the given client
+        /// made it.
+        /// </summary>
+        /// <param name="ReportId">The identification of the report.</param>
+        /// <param name="ClientID">The clientID of who asks.</param>
+        /// <returns>The report forgotten, or null where there was none of that client.</returns>
+        public Report? TryRemoveReport(String  ReportId,
+                                       String  ClientID)
+        {
+            lock (storeLock)
+            {
+
+                for (var node = reports.First; node is not null; node = node.Next)
+                {
+                    if (node.Value.Id?.ToString() == ReportId &&
+                        node.Value.ClientID       == ClientID)
+                    {
+                        reports.Remove(node);
+                        return node.Value;
+                    }
+                }
+
+                return null;
+
+            }
+        }
+
         #endregion
 
 

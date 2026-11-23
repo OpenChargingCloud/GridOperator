@@ -41,8 +41,10 @@ namespace cloud.charging.open.GridOperator.OpenADR
     /// One interval, as long as the event, with one value: the limit in kW,
     /// of the kind its payload type says - IMPORT_CAPACITY_LIMIT for what the
     /// pool may take from the grid, EXPORT_CAPACITY_LIMIT for what it may feed
-    /// into it. Targeted by VEN_NAME at the local controllers it is for, so
-    /// that each of them reads only what is meant for it.
+    /// into it. Targeted, as OpenADR 3.1 has targets, at the local controllers
+    /// it is for: "ven:" and the name of each - see
+    /// <see cref="LocalControllerLogin.GrantedTargets"/> - so that each of them
+    /// reads only what is meant for it, and sees no other of its targets.
     /// </remarks>
     /// <param name="Event">The event, as the local controllers read it.</param>
     /// <param name="GridConnectionPointId">The grid connection point it is for; null for every local controller.</param>
@@ -114,10 +116,9 @@ namespace cloud.charging.open.GridOperator.OpenADR
         /// The names of the local controllers it is for.
         /// </summary>
         public IReadOnlyList<String>   VENNames
-            => [ .. Event.Targets.Where (target => target.Type.ToString() == LocalControllerLogin.VENNameTarget).
-                                  SelectMany(target => target.Values).
-                                  Select(value => value?.ToString() ?? "").
-                                  Where (name  => name.Length > 0) ];
+            => [ .. Event.Targets.Where (target => target.StartsWith(LocalControllerLogin.VENTargetPrefix, StringComparison.Ordinal) &&
+                                                  target.Length > LocalControllerLogin.VENTargetPrefix.Length).
+                                  Select(target => target[LocalControllerLogin.VENTargetPrefix.Length..]) ];
 
         #endregion
 
@@ -144,7 +145,7 @@ namespace cloud.charging.open.GridOperator.OpenADR
                                              [ new ValuesMap(OpenADRValueType.Parse(Kind), [ LimitKW ]) ]) ],
                               EventName:           Name,
                               Priority:            Priority,
-                              Targets:             [ new ValuesMap(OpenADRValueType.Parse(LocalControllerLogin.VENNameTarget), VENNames.Cast<Object>()) ],
+                              Targets:             VENNames.Select(LocalControllerLogin.VENTarget),
                               PayloadDescriptors:  [ new EventPayloadDescriptor(PayloadType.Parse(Kind), UnitType.Parse(Unit)) ],
                               IntervalPeriod:      new IntervalPeriod(Start, Duration),
                               Id:                  Event_Id.NewRandom,
@@ -179,14 +180,65 @@ namespace cloud.charging.open.GridOperator.OpenADR
 
         #endregion
 
-        #region EventJSON()
+        #region IsVisibleTo(Targets) / VisibleTargets(Targets) / AsSeenWith(Targets)
 
         /// <summary>
-        /// The event, as OpenADR 3 writes it.
+        /// Whether a VEN that reads with the given targets - those granted it,
+        /// met with those it asked for - may read this event, as OpenADR 3.1
+        /// has it: an event without targets is everybody's; one with targets
+        /// is read only where they meet.
         /// </summary>
-        public JObject EventJSON()
+        /// <param name="Targets">The targets the VEN reads with.</param>
+        public Boolean IsVisibleTo(IEnumerable<String> Targets)
+
+            => !Event.Targets.Any() ||
+                Event.Targets.Intersect(Targets, StringComparer.Ordinal).Any();
+
+
+        /// <summary>
+        /// The targets of this event a VEN that reads with the given targets
+        /// sees: only those, as a VTN of OpenADR 3.1 hides the others - which
+        /// name the other local controllers the limit was sent to.
+        /// </summary>
+        /// <param name="Targets">The targets the VEN reads with.</param>
+        public IReadOnlyList<String> VisibleTargets(IEnumerable<String> Targets)
+
+            => [ .. Event.Targets.Intersect(Targets, StringComparer.Ordinal) ];
+
+
+        /// <summary>
+        /// The event as a VEN that reads with the given targets sees it: with
+        /// only the targets it may see.
+        /// </summary>
+        /// <param name="Targets">The targets the VEN reads with.</param>
+        public Event AsSeenWith(IEnumerable<String> Targets)
+
+            => new (Event.ProgramId,
+                    Event.Intervals,
+                    Event.EventName,
+                    Event.Priority,
+                    VisibleTargets(Targets),
+                    Event.ReportDescriptors,
+                    Event.PayloadDescriptors,
+                    Event.IntervalPeriod,
+                    Event.Duration,
+                    Event.Id,
+                    Event.Created,
+                    Event.LastModification);
+
+        #endregion
+
+        #region EventJSON(Targets = null)
+
+        /// <summary>
+        /// The event, as OpenADR 3 writes it: with all its targets, as the
+        /// grid operator sees it, or with only those a VEN that reads with the
+        /// given targets may see.
+        /// </summary>
+        /// <param name="Targets">The targets the VEN reads with; null for the grid operator.</param>
+        public JObject EventJSON(IEnumerable<String>? Targets = null)
         {
-            var json = Event.ToJSON();
+            var json = (Targets is null ? Event : AsSeenWith(Targets)).ToJSON();
             json["objectType"] = "EVENT";
             return json;
         }

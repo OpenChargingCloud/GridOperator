@@ -31,6 +31,8 @@ using cloud.charging.open.GridOperator.OpenADR;
 
 using POIChargingPoolId = cloud.charging.open.protocols.WWCP.POI.ChargingPool_Id;
 using GridEventType     = cloud.charging.open.GridOperator.OpenADR.GridEvent;
+using OpenADRValueType  = cloud.charging.open.protocols.OpenADRv3.ValueType;
+using OpenADROperation  = cloud.charging.open.protocols.OpenADRv3.Operation;
 
 #endregion
 
@@ -60,6 +62,16 @@ namespace cloud.charging.open.GridOperator
         /// What the OpenADR 3 VTN keeps: the local controllers, the limits, the reports and the tokens.
         /// </summary>
         public OpenADRStore  OpenADR         { get; }
+
+        /// <summary>
+        /// The subscriptions of the VENs, OpenADR 3.1: kept in memory.
+        /// </summary>
+        public OpenADRSubscriptions  Subscriptions  { get; } = new ();
+
+        /// <summary>
+        /// The webhooks the subscriptions are told by.
+        /// </summary>
+        public WebhookNotifier       Webhooks       { get; }
 
         /// <summary>
         /// The one program of this grid operator, which every limit is of: the
@@ -148,10 +160,14 @@ namespace cloud.charging.open.GridOperator
         private Program NewProgram()
 
             => new (ProgramName,
-                    ProgramLongName:     $"The grid capacity of the grid operator '{Own.Id}'",
-                    RetailerName:        Own.Id.ToString(),
-                    RetailerLongName:    Own.Entity.Name?.FirstText(),
                     PayloadDescriptors:  GridEvent.Kinds.Select(kind => new EventPayloadDescriptor(PayloadType.Parse(kind), UnitType.Parse(GridEvent.Unit))),
+                    // What 3.0.1 had as fields of the program, 3.1 has as its
+                    // attributes; and no targets: every VEN reads it.
+                    Attributes:          [ new ValuesMap(OpenADRValueType.PROGRAM_LONG_NAME, [ $"The grid capacity of the grid operator '{Own.Id}'" ]),
+                                           new ValuesMap(OpenADRValueType.RETAILER_NAME,     [ Own.Id.ToString() ]),
+                                           .. Own.Entity.Name?.FirstText() is String longName
+                                                  ? [ new ValuesMap(OpenADRValueType.RETAILER_LONG_NAME, [ longName ]) ]
+                                                  : Array.Empty<ValuesMap>() ],
                     Id:                  Program_Id.Parse(ProgramName),
                     Created:             Own.Entity.Created,
                     LastModification:    Own.Entity.Created);
@@ -200,7 +216,9 @@ namespace cloud.charging.open.GridOperator
             json.Add(new JProperty("limits",    new JArray(OpenADR.Events().
                                                                    Where (gridEvent => gridEvent.IsFor(Login.VENName) && gridEvent.End > now).
                                                                    Select(gridEvent => gridEvent.Id.ToString()))));
-            json.Add(new JProperty("reports",   OpenADR.Reports().Count(report => report.ClientName.Equals(Login.VENName, StringComparison.OrdinalIgnoreCase))));
+            json.Add(new JProperty("reports",   OpenADR.Reports().Count(report => report.ClientID == Login.ClientID)));
+            json.Add(new JProperty("subscriptions", Subscriptions.Of(Login.ClientID).Count));
+            json.Add(new JProperty("targets",   new JArray(Login.GrantedTargets)));
 
             return json;
 
@@ -232,6 +250,7 @@ namespace cloud.charging.open.GridOperator
                        new JProperty("activeLimits",      OpenADR.Events().Count(gridEvent => gridEvent.StateAt(now) == "active")),
                        new JProperty("scheduledLimits",   OpenADR.Events().Count(gridEvent => gridEvent.StateAt(now) == "scheduled")),
                        new JProperty("reports",           OpenADR.Reports().Count),
+                       new JProperty("subscriptions",     Subscriptions.All().Count),
                        new JProperty("file",              OpenADR.FilePath)
                    );
 
@@ -382,6 +401,8 @@ namespace cloud.charging.open.GridOperator
                 Refusal = ChangeRefusal.NotSaved;
                 return false;
             }
+
+            Subscriptions.RemoveAllOf(existing.ClientID);
 
             Log.Notice($"'{Who}' removed the local controller '{existing.VENName}': it signs in at the OpenADR VTN no more.", "openadr", "web");
 
@@ -542,6 +563,8 @@ namespace cloud.charging.open.GridOperator
                        $": event '{gridEvent.Id}'.",
                        "openadr", "event", "web");
 
+            NotifyOf(gridEvent, OpenADROperation.CREATE);
+
             GridEvent = gridEvent;
             return true;
 
@@ -577,9 +600,90 @@ namespace cloud.charging.open.GridOperator
                        $"for {gridEvent.VENNames.Count} local controller(s).",
                        "openadr", "event", "web");
 
+            NotifyOf(gridEvent, OpenADROperation.DELETE);
+
             Refusal = ChangeRefusal.Invalid;
             return true;
 
+        }
+
+        #endregion
+
+        #region GrantedTargetsOf(ClientID)
+
+        /// <summary>
+        /// The targets granted to the VEN of the given clientID, or null where
+        /// there is no such VEN.
+        /// </summary>
+        /// <param name="ClientID">The clientID of a VEN.</param>
+        public IReadOnlyList<String>? GrantedTargetsOf(String ClientID)
+            => OpenADR.Login(ClientID)?.GrantedTargets;
+
+        #endregion
+
+        #region OnOpenADRNotification / NotifyOf(...)
+
+        /// <summary>
+        /// Raised for every notification of OpenADR 3.1 that is to be
+        /// delivered, whichever way: a webhook, or a message over a connection.
+        /// </summary>
+        public event Action<OpenADRNotification>? OnOpenADRNotification;
+
+
+        /// <summary>
+        /// Tell the subscriptions that ask for it of what was done to the
+        /// given limit: each with only the targets its VEN may see.
+        /// </summary>
+        /// <param name="GridEvent">The limit.</param>
+        /// <param name="Operation">What was done to it.</param>
+        public void NotifyOf(GridEvent         GridEvent,
+                             OpenADROperation  Operation)
+
+            => Deliver(Subscriptions.OfTargetedObject(ObjectType.EVENT,
+                                                      Operation,
+                                                      [ .. GridEvent.Event.Targets ],
+                                                      readWith => GridEvent.AsSeenWith(readWith),
+                                                      GrantedTargetsOf,
+                                                      Program.Id));
+
+
+        /// <summary>
+        /// Tell the subscriptions of the VEN that owns it of what was done to
+        /// the given report or subscription.
+        /// </summary>
+        /// <param name="ObjectType">REPORT or SUBSCRIPTION.</param>
+        /// <param name="Operation">What was done to it.</param>
+        /// <param name="Object">The report or the subscription.</param>
+        /// <param name="OwnerClientID">The clientID of the VEN that owns it.</param>
+        public void NotifyOf(ObjectType        ObjectType,
+                             OpenADROperation  Operation,
+                             IOpenADRObject    Object,
+                             String            OwnerClientID)
+
+            => Deliver(Subscriptions.OfOwnObject(ObjectType,
+                                                 Operation,
+                                                 Object,
+                                                 OwnerClientID,
+                                                 Program.Id));
+
+
+        private void Deliver(IReadOnlyList<OpenADRNotification> Notifications)
+        {
+            foreach (var notification in Notifications)
+            {
+
+                OnOpenADRNotification?.Invoke(notification);
+
+                // A callback of HTTP is a webhook; whatever else a callback
+                // names is delivered by whoever raised it.
+                if (notification.ObjectOperation.CallbackURL.ToString() is String callback &&
+                   (callback.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
+                    callback.StartsWith("http://",  StringComparison.OrdinalIgnoreCase)))
+                {
+                    Webhooks.Deliver(notification);
+                }
+
+            }
         }
 
         #endregion

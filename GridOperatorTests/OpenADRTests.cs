@@ -283,7 +283,7 @@ namespace cloud.charging.open.GridOperator.Tests
 
             Assert.Multiple(() => {
                 Assert.That(reportStatus,                                Is.EqualTo(HttpStatusCode.Created), reported.ToString());
-                Assert.That(reported["clientName"]?.Value<String>(),     Is.EqualTo("lc-paradies"), "a report is kept under another name than its sender's");
+                Assert.That(reported["clientID"]?.Value<String>(),       Is.EqualTo("lc-paradies"), "a report is kept under another clientID than its sender's");
                 Assert.That(grid.OpenADR.Reports(),                      Has.Count.EqualTo(1));
                 Assert.That(programStatus,                               Is.EqualTo(HttpStatusCode.Forbidden));
             });

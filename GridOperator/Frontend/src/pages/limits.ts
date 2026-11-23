@@ -197,7 +197,7 @@ export const limitsPage: Page = {
                                     ${repeat(reports!.reports, report => String(report['id']), report => html`
                                         <tr>
                                             <td>${dayAndTime(String(report['createdDateTime'] ?? ''))}</td>
-                                            <td class="mono">${String(report['clientName'] ?? '')}</td>
+                                            <td class="mono">${String(report['clientID'] ?? report['clientName'] ?? '')}</td>
                                             <td class="mono small">${String(report['eventID'] ?? '')}</td>
                                             <td>${String(report['reportName'] ?? '-')}</td>
                                         </tr>

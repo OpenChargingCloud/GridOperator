@@ -215,6 +215,10 @@ namespace cloud.charging.open.GridOperator
                    RoleDefinitions:    GridOperatorAccess.Roles,
                    CertificatesPath:   CertificatesPath,
                    CertificateKinds:   CertificateKinds,
+                   // The WebSocket port of OpenADR is told apart from the web
+                   // interface: a local controller is shown what a device PKI
+                   // issued for it, a browser what a browser believes.
+                   CertificateListeners:  [ VENListener ],
                    Log:                Log,
                    LogToConsole:       LogToConsole,
                    ConsoleLogLevel:    ConsoleLogLevel,
@@ -248,7 +252,8 @@ namespace cloud.charging.open.GridOperator
 
             #region OpenADR
 
-            this.OpenADR = new OpenADRStore(Path.Combine(beside, OpenADRStore.DirectoryName, OpenADRStore.FileName), this.TimeProvider);
+            this.OpenADR   = new OpenADRStore(Path.Combine(beside, OpenADRStore.DirectoryName, OpenADRStore.FileName), this.TimeProvider);
+            this.Webhooks  = new WebhookNotifier(this);
 
             foreach (var problem in OpenADR.ReadProblems)
                 this.Log.Warning(problem, "openadr");
@@ -286,6 +291,13 @@ namespace cloud.charging.open.GridOperator
 
             #endregion
 
+            #region The local controllers that connect over a WebSocket or over SSH
+
+            // Nothing listens yet - OnListening does. See GridOperator.VENs.cs.
+            BuildVENServer();
+
+            #endregion
+
             #region What somebody signed in over SSH gets
 
             // A grid operator's command line, with its commands beside the
@@ -300,6 +312,26 @@ namespace cloud.charging.open.GridOperator
 
         #endregion
 
+
+        #region (protected override) OnListening() / OnStopping()
+
+        /// <summary>
+        /// Begin listening for the local controllers that connect over a
+        /// WebSocket or over SSH, once the web interface has its port.
+        /// </summary>
+        protected override Task OnListening()
+
+            => StartVENServer();
+
+        /// <summary>
+        /// Let go of the local controllers connected over a WebSocket or over
+        /// SSH, before the node stops its web interface.
+        /// </summary>
+        protected override Task OnStopping()
+
+            => StopVENServer();
+
+        #endregion
 
         #region (protected override) OnStarted()
 

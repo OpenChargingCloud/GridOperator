@@ -75,10 +75,27 @@ namespace cloud.charging.open.GridOperator.OpenADR
         /// </summary>
         public const String GridConnectionPointAttribute  = "GRID_CONNECTION_POINT_ID";
 
+        // The targets of OpenADR 3.1 are strings the business logic makes up.
+        // This grid operator grants each VEN three, and sends its limits to
+        // the first of them - see GrantedTargets. Prefixed, so that a VEN
+        // named like a grid connection point is not granted that point.
+
         /// <summary>
-        /// The target type of OpenADR that names a VEN.
+        /// The prefix of the target that names one VEN: "ven:lc-1".
         /// </summary>
-        public const String VENNameTarget                 = "VEN_NAME";
+        public const String VENTargetPrefix                  = "ven:";
+
+        /// <summary>
+        /// The prefix of the target that names a grid connection point:
+        /// "gridConnectionPoint:DE*GEF*G1".
+        /// </summary>
+        public const String GridConnectionPointTargetPrefix  = "gridConnectionPoint:";
+
+        /// <summary>
+        /// The prefix of the target that names a charging pool:
+        /// "chargingPool:DE*GEF*P1".
+        /// </summary>
+        public const String ChargingPoolTargetPrefix         = "chargingPool:";
 
         [GeneratedRegex("^[A-Za-z0-9._:-]{1,64}$")]
         private static partial Regex NamePattern();
@@ -167,18 +184,52 @@ namespace cloud.charging.open.GridOperator.OpenADR
         #endregion
 
 
+        #region ClientID / GrantedTargets / (static) VENTarget(VENName)
+
+        /// <summary>
+        /// Who the VTN knows this VEN by, as OpenADR 3.1 has it: its name,
+        /// which is also the client_id of its client credentials, and what a
+        /// connection over WebSocket or SSH that names it signs in as. The
+        /// VTN writes it into every report and subscription of the VEN, and
+        /// gives the VEN back only those that carry it.
+        /// </summary>
+        public String               ClientID
+            => VENName;
+
+        /// <summary>
+        /// The targets this grid operator, as the business logic of its VTN,
+        /// grants this VEN: the VEN itself, the grid connection point of its
+        /// pool, and the pool. A program or event with targets is read by a
+        /// VEN only where they meet these.
+        /// </summary>
+        public IReadOnlyList<String> GrantedTargets
+            => [ VENTarget(VENName),
+                 GridConnectionPointTargetPrefix + GridConnectionPointId,
+                 ChargingPoolTargetPrefix        + ChargingPoolId ];
+
+        /// <summary>
+        /// The target that names the given VEN.
+        /// </summary>
+        /// <param name="VENName">The name of a VEN.</param>
+        public static String VENTarget(String VENName)
+            => VENTargetPrefix + VENName;
+
+        #endregion
+
         #region ToVirtualEndNode()
 
         /// <summary>
-        /// The login as the VEN object of OpenADR 3: its name, the pool and the
-        /// grid connection point as attributes, and its name as its target.
+        /// The login as the ven object of OpenADR 3.1: its name and its
+        /// clientID, the pool and the grid connection point as attributes, and
+        /// the targets granted to it.
         /// </summary>
         public VirtualEndNode ToVirtualEndNode()
 
             => new (VENName,
+                    ClientID:          ClientID,
                     Attributes:        [ new ValuesMap(OpenADRValueType.Parse(ChargingPoolAttribute),         [ ChargingPoolId ]),
                                          new ValuesMap(OpenADRValueType.Parse(GridConnectionPointAttribute),  [ GridConnectionPointId ]) ],
-                    Targets:           [ new ValuesMap(OpenADRValueType.Parse(VENNameTarget),                 [ VENName ]) ],
+                    Targets:           GrantedTargets,
                     Id:                VENId,
                     Created:           Created,
                     LastModification:  Created);
