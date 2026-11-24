@@ -143,6 +143,39 @@ namespace cloud.charging.open.GridOperator
         /// </summary>
         private readonly ConcurrentDictionary<String, Int32>  loginsIn            = new ();
 
+        /// <summary>
+        /// What a VEN came in as: its connection, and what of it let it in then -
+        /// kept as it was, as the store changes a connection in place.
+        /// </summary>
+        private sealed record VENDoor(String          ConnectionId,
+                                      OpenADRBinding  Binding,
+                                      Boolean         OverSSH,
+                                      String?         Name,
+                                      String?         VEN)
+        {
+
+            public static VENDoor Of(ConnectionEntry Entry)
+
+                => new (Entry.Id,
+                        Entry.OpenADRBinding,
+                        Entry.IsSSH,
+                        Entry.InboundName,
+                        Entry.VEN);
+
+        }
+
+        /// <summary>
+        /// A tunnel in now: what it came in as, its login, and how it is let go of.
+        /// </summary>
+        private sealed record VENTunnel(VENDoor             Door,
+                                        User_Id             Login,
+                                        Func<String, Task>  LetGo);
+
+        /// <summary>
+        /// The tunnels in now.
+        /// </summary>
+        private readonly ConcurrentDictionary<Object, VENTunnel>  venTunnels  = new (ReferenceEqualityComparer.Instance);
+
         private readonly CancellationTokenSource              vensStopping        = new ();
 
         #endregion
@@ -251,6 +284,7 @@ namespace cloud.charging.open.GridOperator
                           };
 
             Connections.OnConnectionsChanged += SayWhichVENIsWaitedFor;
+            Connections.OnConnectionsChanged += LetGoOfWhatIsNoLongerLetIn;
             Connections.OnNotice             += (level, message) => Log.Log(level, message, "openadr", "connections");
 
             // What every node that keeps connections has, though this one makes
@@ -661,29 +695,50 @@ namespace cloud.charging.open.GridOperator
                         Connection.LocalSocket,
                         Connection.RemoteSocket,
                         venServerTLS ? "WebSocket TLS" : "WebSocket",
-                        vensStopping.Token);
+                        vensStopping.Token,
+                        because => Connection.Close(WebSocketFrame.ClosingStatusCode.PolicyViolation, because));
 
         }
 
         #endregion
 
-        #region (private) Serve(Entry, Login, Stream, LocalSocket, RemoteSocket, Transport, CancellationToken)
+        #region (private) Serve(Entry, Login, Stream, LocalSocket, RemoteSocket, Transport, CancellationToken, Close = null)
 
         /// <summary>
         /// Serve the REST API of the VTN over the given stream to what came in as
-        /// the given connection, as the VEN that connection names.
+        /// the given connection, as the VEN that connection names - until it
+        /// ends, or is let go of as its connection is no longer what let it in.
         /// </summary>
-        private async Task Serve(ConnectionEntry    Entry,
-                                 User_Id            Login,
-                                 Stream             Stream,
-                                 IPSocket           LocalSocket,
-                                 IPSocket           RemoteSocket,
-                                 String             Transport,
-                                 CancellationToken  CancellationToken)
+        /// <param name="Close">How what the stream goes over is closed, where ending the stream does not close it: a WebSocket.</param>
+        private async Task Serve(ConnectionEntry      Entry,
+                                 User_Id              Login,
+                                 Stream               Stream,
+                                 IPSocket             LocalSocket,
+                                 IPSocket             RemoteSocket,
+                                 String               Transport,
+                                 CancellationToken    CancellationToken,
+                                 Func<String, Task>?  Close   = null)
         {
 
             var ven     = Entry.VEN ?? "";
             var tunnel  = new VENTunnelStream(Stream, ven, Entry.Id, Login.ToString(), Transport);
+            var key     = new Object();
+
+            using var letGo = CancellationTokenSource.CreateLinkedTokenSource(CancellationToken);
+
+            venTunnels[key] = new VENTunnel(
+                                  VENDoor.Of(Entry),
+                                  Login,
+                                  async because => {
+
+                                      try { letGo.Cancel(); } catch (ObjectDisposedException) { }
+                                      try { await tunnel.DisposeAsync(); } catch { }
+
+                                      if (Close is not null)
+                                          try { await Close(because); } catch { }
+
+                                  }
+                              );
 
             VENCameIn(Entry, Login, RemoteSocket, Transport, "speaking the REST API of OpenADR in a tunnel");
 
@@ -698,12 +753,16 @@ namespace cloud.charging.open.GridOperator
                           tunnel,
                           LocalSocket,
                           RemoteSocket,
-                          CancellationToken: CancellationToken
+                          CancellationToken: letGo.Token
                       );
 
             }
+            catch (OperationCanceledException) when (letGo.IsCancellationRequested)
+            { }
             finally
             {
+
+                venTunnels.TryRemove(key, out _);
 
                 try { await tunnel.DisposeAsync(); } catch { }
 
@@ -760,6 +819,64 @@ namespace cloud.charging.open.GridOperator
                 vensIn.TryRemove(KeyValuePair.Create(Entry.Id, 0));
                 SayWhichVENIsWaitedFor();
             }
+
+        }
+
+        #endregion
+
+        #region (private) LetGoOfWhatIsNoLongerLetIn() / WhyNoLongerLetIn(Door)
+
+        /// <summary>
+        /// Let go of every VEN in now whose connection is no longer what let it
+        /// in - removed, switched off, or written down otherwise: another
+        /// binding, transport, name or VEN. It connects again, and is let in as
+        /// its connection says then, or not at all.
+        /// </summary>
+        private void LetGoOfWhatIsNoLongerLetIn()
+        {
+
+            if (Connections is null)
+                return;
+
+            foreach (var (key, tunnel) in venTunnels.ToArray())
+                if (WhyNoLongerLetIn(tunnel.Door) is String why && venTunnels.TryRemove(key, out _))
+                {
+                    Log.Info($"'{tunnel.Login}' is let go of: {why}.", "openadr", "ven", "connections");
+                    _ = tunnel.LetGo($"Let go of: {why}.");
+                }
+
+            LetGoOfMessagesNoLongerLetIn();
+
+        }
+
+        /// <summary>
+        /// Why what came in as the given door is no longer let in - or null,
+        /// where its connection is still what let it in.
+        /// </summary>
+        private String? WhyNoLongerLetIn(VENDoor Door)
+        {
+
+            var now = Connections?.Connections.FirstOrDefault(entry => entry.Id == Door.ConnectionId);
+
+            if (now is null)
+                return "its connection was removed";
+
+            if (!now.AutoConnect)
+                return "its connection was switched off";
+
+            if (now.OpenADRBinding != Door.Binding)
+                return $"its connection speaks {(now.OpenADRBinding == OpenADRBinding.Messages ? "the JSON messages" : "the REST API")} of OpenADR now";
+
+            if (now.IsSSH != Door.OverSSH)
+                return $"its connection comes over {(now.IsSSH ? "SSH" : "a WebSocket")} now";
+
+            if (now.InboundName != Door.Name)
+                return $"its connection comes under the name '{now.InboundName}' now";
+
+            if (now.VEN != Door.VEN)
+                return $"its connection is the VEN '{now.VEN}' now";
+
+            return null;
 
         }
 

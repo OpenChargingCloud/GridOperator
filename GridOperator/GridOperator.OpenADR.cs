@@ -33,6 +33,10 @@ using POIChargingPoolId = cloud.charging.open.protocols.WWCP.POI.ChargingPool_Id
 using GridEventType     = cloud.charging.open.GridOperator.OpenADR.GridEvent;
 using OpenADRValueType  = cloud.charging.open.protocols.OpenADRv3.ValueType;
 using OpenADROperation  = cloud.charging.open.protocols.OpenADRv3.Operation;
+using ConnectionEntry   = cloud.charging.open.protocols.WWCP.Node.Connections.ConnectionEntry;
+using ConnectionState   = cloud.charging.open.protocols.WWCP.Node.Connections.ConnectionState;
+using ConnectionStatus  = cloud.charging.open.protocols.WWCP.Node.Connections.ConnectionStatus;
+using ConnectionType    = cloud.charging.open.protocols.WWCP.Node.Connections.ConnectionType;
 
 #endregion
 
@@ -204,23 +208,102 @@ namespace cloud.charging.open.GridOperator
 
         /// <summary>
         /// A local controller, as the JSON API shows it: without its secret,
-        /// with when it was last seen and the limits for it that are not over.
+        /// with when it was last seen and the limits for it that are not over,
+        /// the connections it connects over, and its subscriptions.
         /// </summary>
         public JObject LocalControllerJSON(LocalControllerLogin Login)
         {
 
-            var now   = TimeProvider.GetUtcNow();
-            var json  = Login.ToJSON(IncludeSecret: false);
+            var now     = TimeProvider.GetUtcNow();
+            var json    = Login.ToJSON(IncludeSecret: false);
+            var states  = ConnectionStates;
 
-            json.Add(new JProperty("lastSeen",  OpenADR.LastSeen(Login.VENName)?.ToISO8601()));
-            json.Add(new JProperty("limits",    new JArray(OpenADR.Events().
-                                                                   Where (gridEvent => gridEvent.IsFor(Login.VENName) && gridEvent.End > now).
-                                                                   Select(gridEvent => gridEvent.Id.ToString()))));
-            json.Add(new JProperty("reports",   OpenADR.Reports().Count(report => report.ClientID == Login.ClientID)));
-            json.Add(new JProperty("subscriptions", Subscriptions.Of(Login.ClientID).Count));
-            json.Add(new JProperty("targets",   new JArray(Login.GrantedTargets)));
+            json.Add(new JProperty("lastSeen",       OpenADR.LastSeen(Login.VENName)?.ToISO8601()));
+            json.Add(new JProperty("limits",         new JArray(OpenADR.Events().
+                                                                        Where (gridEvent => gridEvent.IsFor(Login.VENName) && gridEvent.End > now).
+                                                                        Select(gridEvent => gridEvent.Id.ToString()))));
+            json.Add(new JProperty("reports",        OpenADR.Reports().Count(report => report.ClientID == Login.ClientID)));
+            json.Add(new JProperty("connections",    new JArray(VENConnectionsOf(Login.VENName).
+                                                                        Select(entry => VENConnectionJSON(entry, states.GetValueOrDefault(entry.Id))))));
+            json.Add(new JProperty("subscriptions",  new JArray(Subscriptions.Of(Login.ClientID).Select(SubscriptionJSON))));
+            json.Add(new JProperty("targets",        new JArray(Login.GrantedTargets)));
 
             return json;
+
+        }
+
+        #endregion
+
+        #region (private) VENConnectionsOf(VENName) / VENConnectionJSON(Entry, State)
+
+        /// <summary>
+        /// The connections a VEN of the given name connects to this grid
+        /// operator over: each one written down for it, whoever signs in.
+        /// </summary>
+        private IEnumerable<ConnectionEntry> VENConnectionsOf(String VENName)
+
+            => Connections?.Connections.Where(entry => entry.Inbound                             &&
+                                                       entry.ConnectionType == ConnectionType.VEN &&
+                                                       String.Equals(entry.VEN, VENName, StringComparison.OrdinalIgnoreCase)) ?? [];
+
+        /// <summary>
+        /// A connection of a VEN, as the page of the local controllers shows
+        /// it: who signs in over what, in which binding of OpenADR, whether it
+        /// is switched on, where it stands - in now, or waited for, and why -,
+        /// and how many notifications wait to be told over it.
+        /// </summary>
+        /// <param name="Entry">The connection.</param>
+        /// <param name="State">Where it stands, if anything was said of it yet.</param>
+        private JObject VENConnectionJSON(ConnectionEntry   Entry,
+                                          ConnectionState?  State)
+
+            => new (
+                   new JProperty("id",                    Entry.Id),
+                   new JProperty("login",                 Entry.InboundName),
+                   new JProperty("description",           Entry.Description.FirstText()),
+                   new JProperty("transport",             Entry.IsSSH ? "ssh" : Entry.IsSecure ? "wss" : "ws"),
+                   new JProperty("binding",               ConnectionEntry.AsText(Entry.OpenADRBinding)),
+                   new JProperty("enabled",               Entry.AutoConnect),
+                   new JProperty("status",                State is not null ? ConnectionState.AsText(State.Status) : null),
+                   new JProperty("said",                  State?.Said),
+                   new JProperty("since",                 State?.Since.ToISO8601()),
+                   // A VEN that came in over it is written down as connected,
+                   // until the last that came in over it went.
+                   new JProperty("in",                    State?.Status == ConnectionStatus.Connected),
+                   new JProperty("notificationsWaiting",  NotificationsWaitingFor(Entry.Id))
+               );
+
+        #endregion
+
+        #region (private) SubscriptionJSON(Subscription)
+
+        /// <summary>
+        /// A subscription of a VEN, as the page of the local controllers shows
+        /// it: what it asks to be told of, and where - over a connection of the
+        /// JSON messages of OpenADR, or to a webhook. No bearer token it gave.
+        /// </summary>
+        /// <param name="Subscription">The subscription.</param>
+        private JObject SubscriptionJSON(Subscription Subscription)
+        {
+
+            var id = Subscription.Id?.ToString();
+
+            return new JObject(
+                       new JProperty("id",                id),
+                       new JProperty("clientName",        Subscription.ClientName),
+                       new JProperty("created",           Subscription.Created?.ToISO8601()),
+                       new JProperty("objectOperations",  new JArray(Subscription.ObjectOperations.Select(objectOperation => new JObject(
+                                                              new JProperty("objects",      new JArray(objectOperation.Objects.   Select(@object   => @object.  ToString()))),
+                                                              new JProperty("operations",   new JArray(objectOperation.Operations.Select(operation => operation.ToString()))),
+                                                              new JProperty("callbackUrl",  objectOperation.CallbackURL.ToString()),
+                                                              new JProperty("callback",     OpenADRSubscriptions.IsConnectionCallback(objectOperation.CallbackURL.ToString())
+                                                                                                ? "connection"
+                                                                                                : "webhook")
+                                                          )))),
+                       // The connection of messages it is told over, if it was
+                       // made over one.
+                       new JProperty("toldOver",          id is not null ? Subscriptions.ConnectionOf(id) : null)
+                   );
 
         }
 

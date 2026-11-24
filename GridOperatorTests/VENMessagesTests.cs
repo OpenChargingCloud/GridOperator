@@ -31,6 +31,7 @@ using org.GraphDefined.Vanaheimr.Hermod.SSH.Client;
 
 using cloud.charging.open.protocols.OpenADRv3.Messaging;
 using cloud.charging.open.protocols.WWCP.Node.OpenADR;
+using cloud.charging.open.protocols.WWCP.Node.Connections;
 using cloud.charging.open.protocols.WWCP.Node.Streams;
 using cloud.charging.open.protocols.WWCP.Node.TestKit;
 
@@ -63,11 +64,17 @@ namespace cloud.charging.open.GridOperator.Tests
         /// </summary>
         private sealed class AVEN(OpenADRMessageEndpoint   Endpoint,
                                   ConcurrentQueue<JObject>  Notified,
-                                  Func<Task>                Close) : IAsyncDisposable
+                                  Func<Task>                Close,
+                                  Func<Boolean>             IsGone) : IAsyncDisposable
         {
 
             public OpenADRMessageEndpoint    Endpoint  { get; } = Endpoint;
             public ConcurrentQueue<JObject>  Notified  { get; } = Notified;
+
+            /// <summary>
+            /// Whether what it goes over ended.
+            /// </summary>
+            public Boolean                   Gone      => IsGone();
 
             public Task<OpenADRCallOutcome> Ask(String Action, JObject? Payload = null)
                 => Endpoint.AskAsync(Action, Payload ?? [], TimeSpan.FromSeconds(10));
@@ -228,7 +235,14 @@ namespace cloud.charging.open.GridOperator.Tests
                     return null;
                 }
 
-                OpenADRMessageEndpoint? sshEndpoint = null;
+                // Its end of the messages before it connects: what the grid
+                // operator tells it at once - what waited for it - is not lost.
+                SshMessageConnection? messages = null;
+
+                var sshEndpoint = new OpenADRMessageEndpoint("a VEN over SSH",
+                                                             async (text, cancellationToken) => messages is not null &&
+                                                                                                await messages.SendTextMessage(text, cancellationToken) == org.GraphDefined.Vanaheimr.Hermod.WebSocket.SentStatus.Success,
+                                                             Answer);
 
                 var client = new SshMessageClient(new SshMessageClientOptions {
                                  Host          = "127.0.0.1",
@@ -237,22 +251,23 @@ namespace cloud.charging.open.GridOperator.Tests
                                  Subprotocols  = [ Subprotocol ?? OpenADRWireNames.Subprotocol ]
                              });
 
-                client.OnTextMessageReceived += (timestamp, sender, connection, text, cancellationToken)
-                                                    => sshEndpoint?.ReceiveAsync(text) ?? Task.CompletedTask;
+                client.OnTextMessageReceived += (timestamp, sender, connection, text, cancellationToken) => {
+                                                    messages ??= connection;
+                                                    return sshEndpoint.ReceiveAsync(text);
+                                                };
 
                 try
                 {
 
-                    var messages = await client.ConnectAsync();
+                    messages = await client.ConnectAsync();
 
-                    sshEndpoint  = new OpenADRMessageEndpoint("a VEN over SSH",
-                                                              async (text, cancellationToken) => await messages.SendTextMessage(text, cancellationToken) == org.GraphDefined.Vanaheimr.Hermod.WebSocket.SentStatus.Success,
-                                                              Answer);
-
-                    return new AVEN(sshEndpoint, notified, async () => {
+                    return new AVEN(sshEndpoint,
+                                    notified,
+                                    async () => {
                                         await client.Close();
                                         await ssh.DisposeAsync();
-                                    });
+                                    },
+                                    () => !client.IsConnected);
 
                 }
                 catch
@@ -264,6 +279,8 @@ namespace cloud.charging.open.GridOperator.Tests
 
             }
 
+            // Its end of the messages before it connects: what the grid operator
+            // tells it at once - what waited for it - is not lost.
             OpenADRMessageEndpoint? endpoint = null;
 
             var webSocket = new MessageWebSocketClient(
@@ -280,6 +297,8 @@ namespace cloud.charging.open.GridOperator.Tests
                                 OnText = text => endpoint?.ReceiveAsync(text) ?? Task.CompletedTask
                             };
 
+            endpoint = new OpenADRMessageEndpoint("a VEN over a WebSocket", webSocket.SendText, Answer);
+
             var (_, response) = await webSocket.Connect();
 
             if (response.HTTPStatusCode != HTTPStatusCode.SwitchingProtocols)
@@ -291,12 +310,89 @@ namespace cloud.charging.open.GridOperator.Tests
 
             Assert.That(response.SecWebSocketProtocol, Is.EqualTo(Subprotocol ?? OpenADRWireNames.Subprotocol));
 
-            endpoint = new OpenADRMessageEndpoint("a VEN over a WebSocket", webSocket.SendText, Answer);
-
-            return new AVEN(endpoint, notified, async () => {
+            return new AVEN(endpoint,
+                            notified,
+                            async () => {
                                 webSocket.End();
                                 await webSocket.DisposeAsync();
-                            });
+                            },
+                            () => webSocket.Ended.IsCompleted);
+
+        }
+
+        #endregion
+
+        #region (internal static) ChangeTheConnectionOf(Grid, Login, Change)
+
+        /// <summary>
+        /// Change the connection the given login comes under: "off" switches it
+        /// off, "on" on again, "rest" and "messages" write it down for that
+        /// binding, "removed" removes it.
+        /// </summary>
+        internal static void ChangeTheConnectionOf(GridOperator  Grid,
+                                                   String        Login,
+                                                   String        Change)
+        {
+
+            var entry  = Grid.Connections.Connections.First(entry => entry.InboundName == Login);
+
+            String? error;
+
+            var done   = Change == "removed"
+                             ? Grid.Connections.TryRemoveConnection(entry.Id, out error)
+                             : Grid.Connections.TryUpdateConnection(entry.Id,
+                                                                    entry.Description,
+                                                                    entry.URL,
+                                                                    "VEN",
+                                                                    Change != "off",
+                                                                    null,
+                                                                    null,
+                                                                    out error,
+                                                                    Inbound:         true,
+                                                                    OpenADRBinding:  Change is "rest" or "messages"
+                                                                                         ? Change
+                                                                                         : entry.OpenADRBinding == OpenADRBinding.REST ? "rest" : "messages",
+                                                                    VEN:             entry.VEN);
+
+            Assert.That(done, Is.True, error);
+
+        }
+
+        #endregion
+
+        #region (private) Subscribe(Grid, VEN, Transport, Login, Name)
+
+        /// <summary>
+        /// The given VEN subscribes to the events over its connection.
+        /// </summary>
+        private async Task Subscribe(GridOperator  Grid,
+                                     AVEN          VEN,
+                                     String        Transport,
+                                     String        Login,
+                                     String        Name)
+        {
+
+            var subscription  = JObject.Parse($$"""{ "clientName": "{{Name}}", "objectOperations": [ { "objects": [ "EVENT" ], "operations": [ "CREATE", "UPDATE", "DELETE" ], "callbackUrl": "{{URLOf(Grid, Transport, Login)}}" } ] }""");
+            var subscribed    = await VEN.Ask(OpenADRActions.CreateSubscription, new JObject(new JProperty("subscription", subscription)));
+
+            Assert.That(subscribed.Succeeded, Is.True, subscribed.ToString());
+
+        }
+
+        #endregion
+
+        #region (private) ALimitFor(Grid, KW)
+
+        /// <summary>
+        /// A limit of the given kW sent to the point lc-paradies is behind.
+        /// </summary>
+        private static String ALimitFor(GridOperator  Grid,
+                                        Int32         KW)
+        {
+
+            Assert.That(Grid.TrySendLimit(JObject.Parse($$"""{ "limitKW": {{KW}}, "durationMinutes": 60, "gridConnectionPointId": "GCP-1" }"""), "test", out var limit, out var error, out _), Is.True, error);
+
+            return limit!.Id.ToString();
 
         }
 
@@ -641,6 +737,267 @@ namespace cloud.charging.open.GridOperator.Tests
 
             Assert.That(rightOne, Is.Not.Null, "The connection written down was not let in.");
             Assert.That((await rightOne!.Ask(OpenADRActions.GetNotifiers)).Succeeded, Is.True);
+
+        }
+
+        #endregion
+
+
+        #region AConnectionNoLongerWhatLetItIn_IsLetGoOf(Transport, Change)
+
+        /// <summary>
+        /// A VEN in over its connection is let go of once the connection is no
+        /// longer what let it in - switched off, written down for the REST API,
+        /// removed -, and is not let in again; the other VEN stays in.
+        /// </summary>
+        [TestCase("ws",  "off")]
+        [TestCase("ws",  "rest")]
+        [TestCase("ws",  "removed")]
+        [TestCase("ssh", "off")]
+        [TestCase("ssh", "rest")]
+        [TestCase("ssh", "removed")]
+        public async Task AConnectionNoLongerWhatLetItIn_IsLetGoOf(String Transport, String Change)
+        {
+
+            var grid          = await AStartedGrid();
+            var paradiesPass  = AVENThatConnects(grid, Transport, "lc-1", "lc-paradies");
+            var nordPass      = AVENThatConnects(grid, Transport, "lc-2", "lc-nord");
+
+            await using var paradies  = await Connect(grid, Transport, "lc-1", paradiesPass);
+            await using var nord      = await Connect(grid, Transport, "lc-2", nordPass);
+
+            Assert.That(paradies, Is.Not.Null, "lc-paradies was not let in.");
+            Assert.That(nord,     Is.Not.Null, "lc-nord was not let in.");
+            Assert.That((await paradies!.Ask(OpenADRActions.GetNotifiers)).Succeeded, Is.True);
+
+            ChangeTheConnectionOf(grid, "lc-1", Change);
+
+            Assert.That(await WaitFor(() => paradies.Gone),                         Is.True,  $"lc-paradies was not let go of, its connection {Change}.");
+            Assert.That(await WaitFor(() => grid.VENMessageConnectionsIn.Count == 1), Is.True, "The grid operator still counts lc-paradies in.");
+
+            Assert.Multiple(() => {
+                Assert.That(grid.VENLoginsIn,  Does.Not.Contain("lc-1"));
+                Assert.That(nord!.Gone,        Is.False, "lc-nord was let go of as well.");
+            });
+
+            Assert.That((await nord!.Ask(OpenADRActions.GetNotifiers)).Succeeded, Is.True, "lc-nord is no longer answered.");
+
+            await using var again = await Connect(grid, Transport, "lc-1", paradiesPass);
+
+            var answered = again is not null &&
+                           (await again.Endpoint.AskAsync(OpenADRActions.GetNotifiers, [], TimeSpan.FromSeconds(2)).
+                                             ContinueWith(task => task.IsCompletedSuccessfully && task.Result.Succeeded));
+
+            Assert.That(answered, Is.False, $"lc-paradies was let in again, its connection {Change}.");
+
+        }
+
+        #endregion
+
+        #region AConnectionSwitchedOn_LetsItsVENInAgain(Transport)
+
+        /// <summary>
+        /// A connection switched off and on again lets its VEN in again.
+        /// </summary>
+        [TestCase("ws")]
+        [TestCase("ssh")]
+        public async Task AConnectionSwitchedOn_LetsItsVENInAgain(String Transport)
+        {
+
+            var grid      = await AStartedGrid();
+            var password  = AVENThatConnects(grid, Transport, "lc-1", "lc-paradies");
+
+            await using var paradies = await Connect(grid, Transport, "lc-1", password);
+
+            Assert.That(paradies, Is.Not.Null, "lc-paradies was not let in.");
+
+            ChangeTheConnectionOf(grid, "lc-1", "off");
+
+            Assert.That(await WaitFor(() => paradies!.Gone), Is.True, "lc-paradies was not let go of.");
+
+            ChangeTheConnectionOf(grid, "lc-1", "on");
+
+            await using var again = await Connect(grid, Transport, "lc-1", password);
+
+            Assert.That(again, Is.Not.Null, "lc-paradies was not let in again.");
+            Assert.That((await again!.Ask(OpenADRActions.GetNotifiers)).Succeeded, Is.True);
+
+        }
+
+        #endregion
+
+        #region WhatCameWhileItsVENWasOut_IsToldOnceItIsIn(Transport)
+
+        /// <summary>
+        /// A VEN subscribed over its connection, and out: what it is to be told
+        /// waits, and is told in the order it came once it is in again and asked
+        /// something - over its new connection, not before -, and nothing waits
+        /// then.
+        /// </summary>
+        [TestCase("ws")]
+        [TestCase("ssh")]
+        public async Task WhatCameWhileItsVENWasOut_IsToldOnceItIsIn(String Transport)
+        {
+
+            var grid      = await AStartedGrid();
+            var password  = AVENThatConnects(grid, Transport, "lc-1", "lc-paradies");
+            var entry     = grid.Connections.Connections.First(entry => entry.InboundName == "lc-1").Id;
+
+            var first     = await Connect(grid, Transport, "lc-1", password);
+
+            Assert.That(first, Is.Not.Null, "lc-paradies was not let in.");
+
+            await Subscribe(grid, first!, Transport, "lc-1", "lc-paradies");
+
+            await first!.DisposeAsync();
+
+            Assert.That(await WaitFor(() => grid.VENMessageConnectionsIn.Count == 0), Is.True, "lc-paradies is still counted in.");
+
+            var limit = ALimitFor(grid, 44);
+
+            Assert.That(grid.TryCancelLimit(limit, "test", out var error, out _), Is.True, error);
+
+            Assert.That(await WaitFor(() => grid.NotificationsWaitingFor(entry) == 2), Is.True, $"Not both notifications wait: {grid.NotificationsWaitingFor(entry)}.");
+            Assert.That(grid.NotificationsToldOverMessages,                            Is.Zero);
+
+            await using var second = await Connect(grid, Transport, "lc-1", password);
+
+            Assert.That(second, Is.Not.Null, "lc-paradies was not let in again.");
+
+            // In, and not asked anything yet: not told yet.
+            await Task.Delay(300);
+
+            Assert.That(second!.Notified,                    Is.Empty,          "lc-paradies was told before it asked anything.");
+            Assert.That(grid.NotificationsWaitingFor(entry),  Is.EqualTo(2));
+
+            Assert.That((await second.Ask(OpenADRActions.GetNotifiers)).Succeeded, Is.True);
+
+            Assert.That(await WaitFor(() => second.Notified.Count == 2), Is.True, $"lc-paradies was told {second.Notified.Count} of 2 once it asked.");
+
+            var told = second.Notified.ToArray();
+
+            Assert.Multiple(() => {
+                Assert.That(told[0]["operation"]?.Value<String>(),      Is.EqualTo("CREATE"), "not in the order they came");
+                Assert.That(told[0]["object"]?["id"]?.Value<String>(),  Is.EqualTo(limit));
+                Assert.That(told[1]["operation"]?.Value<String>(),      Is.EqualTo("DELETE"), "not in the order they came");
+                Assert.That(grid.NotificationsWaitingFor(entry),        Is.Zero);
+                Assert.That(grid.NotificationsToldOverMessages,         Is.EqualTo(2));
+            });
+
+        }
+
+        #endregion
+
+        #region WhatWaits_IsKeptUpToANumber_AndForAWhile()
+
+        /// <summary>
+        /// Of what waits, only the newest are kept, up to their number; and what
+        /// waited too long is not told.
+        /// </summary>
+        [Test]
+        public async Task WhatWaits_IsKeptUpToANumber_AndForAWhile()
+        {
+
+            var keptPerConnection  = GridOperator.NotificationsKeptPerConnection;
+            var keptFor            = GridOperator.NotificationsKeptFor;
+
+            try
+            {
+
+                GridOperator.NotificationsKeptPerConnection = 2;
+
+                var grid      = await AStartedGrid();
+                var password  = AVENThatConnects(grid, "ws", "lc-1", "lc-paradies");
+                var entry     = grid.Connections.Connections.First(entry => entry.InboundName == "lc-1").Id;
+
+                var first     = await Connect(grid, "ws", "lc-1", password);
+                await Subscribe(grid, first!, "ws", "lc-1", "lc-paradies");
+                await first!.DisposeAsync();
+
+                Assert.That(await WaitFor(() => grid.VENMessageConnectionsIn.Count == 0), Is.True, "lc-paradies is still counted in.");
+
+                var limits = new[] { ALimitFor(grid, 11), ALimitFor(grid, 22), ALimitFor(grid, 33) };
+
+                Assert.That(await WaitFor(() => grid.NotificationsWaitingFor(entry) == 2), Is.True, $"{grid.NotificationsWaitingFor(entry)} wait, not 2.");
+
+                await using (var second = await Connect(grid, "ws", "lc-1", password))
+                {
+
+                    Assert.That((await second!.Ask(OpenADRActions.GetNotifiers)).Succeeded, Is.True);
+
+                    Assert.That(await WaitFor(() => second.Notified.Count == 2), Is.True, $"lc-paradies was told {second.Notified.Count} of 2.");
+
+                    Assert.That(second.Notified.Select(told => told["object"]?["id"]?.Value<String>()),
+                                Is.EqualTo(limits[1..]),
+                                "Not the newest two were kept.");
+
+                }
+
+                Assert.That(await WaitFor(() => grid.VENMessageConnectionsIn.Count == 0), Is.True, "lc-paradies is still counted in.");
+
+                // And what waited too long.
+                GridOperator.NotificationsKeptFor = TimeSpan.FromMilliseconds(200);
+
+                ALimitFor(grid, 44);
+
+                Assert.That(await WaitFor(() => grid.NotificationsWaitingFor(entry) == 1), Is.True, "The limit does not wait.");
+
+                await Task.Delay(400);
+
+                await using var third = await Connect(grid, "ws", "lc-1", password);
+
+                Assert.That((await third!.Ask(OpenADRActions.GetNotifiers)).Succeeded, Is.True);
+
+                Assert.That(await WaitFor(() => grid.NotificationsWaitingFor(entry) == 0), Is.True, "What waited too long still waits.");
+
+                await Task.Delay(300);
+
+                Assert.That(third!.Notified, Is.Empty, "lc-paradies was told of what waited too long.");
+
+            }
+            finally
+            {
+                GridOperator.NotificationsKeptPerConnection  = keptPerConnection;
+                GridOperator.NotificationsKeptFor            = keptFor;
+            }
+
+        }
+
+        #endregion
+
+        #region WhatWaits_ForAConnectionSwitchedOff_IsLetGoOf()
+
+        /// <summary>
+        /// What waits for a connection that is then switched off is let go of,
+        /// and nothing waits for it while it is off.
+        /// </summary>
+        [Test]
+        public async Task WhatWaits_ForAConnectionSwitchedOff_IsLetGoOf()
+        {
+
+            var grid      = await AStartedGrid();
+            var password  = AVENThatConnects(grid, "ws", "lc-1", "lc-paradies");
+            var entry     = grid.Connections.Connections.First(entry => entry.InboundName == "lc-1").Id;
+
+            var first     = await Connect(grid, "ws", "lc-1", password);
+            await Subscribe(grid, first!, "ws", "lc-1", "lc-paradies");
+            await first!.DisposeAsync();
+
+            Assert.That(await WaitFor(() => grid.VENMessageConnectionsIn.Count == 0), Is.True, "lc-paradies is still counted in.");
+
+            ALimitFor(grid, 44);
+
+            Assert.That(await WaitFor(() => grid.NotificationsWaitingFor(entry) == 1), Is.True, "The limit does not wait.");
+
+            ChangeTheConnectionOf(grid, "lc-1", "off");
+
+            Assert.That(await WaitFor(() => grid.NotificationsWaitingFor(entry) == 0), Is.True, "What waits for a connection switched off was kept.");
+
+            ALimitFor(grid, 55);
+
+            await Task.Delay(300);
+
+            Assert.That(grid.NotificationsWaitingFor(entry), Is.Zero, "Something waits for a connection that is switched off.");
 
         }
 

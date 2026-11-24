@@ -89,12 +89,22 @@ namespace cloud.charging.open.GridOperator
 
         /// <summary>
         /// One connection of messages that is in: the connection it came under,
-        /// its login, what it came over, and its end of the messages.
+        /// what of it let it in then, its login, what it came over, its end of
+        /// the messages, and how what it goes over is closed.
         /// </summary>
         private sealed record VENMessageSession(ConnectionEntry         Entry,
+                                                VENDoor                 Door,
                                                 User_Id                 Login,
                                                 String                  Transport,
-                                                OpenADRMessageEndpoint  Endpoint);
+                                                OpenADRMessageEndpoint  Endpoint,
+                                                Func<String, Task>      Close);
+
+        /// <summary>
+        /// A notification for a connection of messages, waiting to be told, and
+        /// since when.
+        /// </summary>
+        private sealed record WaitingNotification(OpenADRNotification  Notification,
+                                                  DateTimeOffset       Since);
 
         private          SshMessageServer?                                       venMessageServer;
 
@@ -105,6 +115,31 @@ namespace cloud.charging.open.GridOperator
         private readonly ConcurrentDictionary<String, OpenADRMessageEndpoint>   venMessageEndpoints  = new ();
 
         private          Int64                                                   notificationsTold;
+
+        // By the connection of this grid operator: what waits to be told over
+        // it, oldest first - and whether it is being told now.
+        private readonly ConcurrentDictionary<String, ConcurrentQueue<WaitingNotification>>  notificationsWaiting  = new ();
+        private readonly ConcurrentDictionary<String, Byte>                                  notificationsTelling  = new ();
+
+        // The ends of the messages whose VEN asked something over them: it is
+        // ready to be told - not before.
+        private readonly ConcurrentDictionary<OpenADRMessageEndpoint, Byte>                  endpointsThatAsked    = new (ReferenceEqualityComparer.Instance);
+
+        #endregion
+
+        #region Properties: how long and how many notifications are kept
+
+        /// <summary>
+        /// How many notifications are kept for a connection of messages whose VEN
+        /// is not in: beyond them, the oldest is let go of.
+        /// </summary>
+        public static Int32     NotificationsKeptPerConnection    { get; set; } = 100;
+
+        /// <summary>
+        /// How long a notification is kept for a connection of messages whose VEN
+        /// is not in.
+        /// </summary>
+        public static TimeSpan  NotificationsKeptFor              { get; set; } = TimeSpan.FromHours(1);
 
         #endregion
 
@@ -122,6 +157,17 @@ namespace cloud.charging.open.GridOperator
         /// </summary>
         public Int64                  NotificationsToldOverMessages
             => Interlocked.Read(ref notificationsTold);
+
+        /// <summary>
+        /// How many notifications wait to be told over the given connection of
+        /// messages: its VEN is not in, or is being told of them now.
+        /// </summary>
+        /// <param name="ConnectionId">The connection of this grid operator.</param>
+        public Int32 NotificationsWaitingFor(String ConnectionId)
+
+            => notificationsWaiting.TryGetValue(ConnectionId, out var waiting)
+                   ? waiting.Count
+                   : 0;
 
         #endregion
 
@@ -241,7 +287,8 @@ namespace cloud.charging.open.GridOperator
                           User_Id.Parse(name),
                           Connection.RemoteSocket,
                           venServerTLS ? "WebSocket TLS" : "WebSocket",
-                          async (text, cancellationToken) => await Server.SendTextMessage(Connection, text, CancellationToken: cancellationToken) == SentStatus.Success);
+                          async (text, cancellationToken) => await Server.SendTextMessage(Connection, text, CancellationToken: cancellationToken) == SentStatus.Success,
+                          because => Connection.Close(WebSocketFrame.ClosingStatusCode.PolicyViolation, because));
 
         }
 
@@ -311,38 +358,60 @@ namespace cloud.charging.open.GridOperator
                           Connection.Username,
                           Connection.RemoteSocket,
                           "SSH",
-                          async (text, cancellationToken) => await Connection.SendTextMessage(text, cancellationToken) == SentStatus.Success);
+                          async (text, cancellationToken) => await Connection.SendTextMessage(text, cancellationToken) == SentStatus.Success,
+                          because => Connection.Close(org.GraphDefined.Vanaheimr.Hermod.Messaging.MessageCloseCode.PolicyViolation, because));
 
         }
 
         #endregion
 
-        #region (private) StartMessages(Key, Entry, Login, RemoteSocket, Transport, Send) / EndMessages(Key, Because)
+        #region (private) StartMessages(Key, Entry, Login, RemoteSocket, Transport, Send, Close) / EndMessages(Key, Because)
 
         /// <summary>
         /// Serve the JSON messages of OpenADR over what came in as the given
-        /// connection, as the VEN it names.
+        /// connection, as the VEN it names - and tell it what waited for it, once
+        /// it asked something over it.
         /// </summary>
+        /// <remarks>
+        /// A VEN may not be ready to be told the moment its connection is up: a
+        /// Notify that came before it could take one would be lost. What it asks
+        /// says it is ready - and a local controller asks the VTN at once over a
+        /// connection that came up.
+        /// </remarks>
         private void StartMessages(Object                                          Key,
                                    ConnectionEntry                                 Entry,
                                    User_Id                                         Login,
                                    IPSocket                                        RemoteSocket,
                                    String                                          Transport,
-                                   Func<String, CancellationToken, Task<Boolean>>  Send)
+                                   Func<String, CancellationToken, Task<Boolean>>  Send,
+                                   Func<String, Task>                              Close)
         {
 
-            var endpoint = new OpenADRMessageEndpoint(
-                               $"The VTN of this {NodeNoun}, to '{Login}'",
-                               Send,
-                               (action, payload, cancellationToken) => AskTheVTN(Entry, Login, Transport, RemoteSocket, action, payload, cancellationToken)
-                           ) {
-                               OnProblem = problem => Log.Warning(problem, "openadr", "ven", "messages")
-                           };
+            OpenADRMessageEndpoint? endpoint = null;
 
-            venMessageSessions [Key]       = new VENMessageSession(Entry, Login, Transport, endpoint);
+            endpoint = new OpenADRMessageEndpoint(
+                           $"The VTN of this {NodeNoun}, to '{Login}'",
+                           Send,
+                           (action, payload, cancellationToken) => {
+
+                               // The first it asks: ready to be told what waits.
+                               if (endpoint is not null && endpointsThatAsked.TryAdd(endpoint, 0))
+                                   TellWhatWaits(Entry.Id);
+
+                               return AskTheVTN(Entry, Login, Transport, RemoteSocket, action, payload, cancellationToken);
+
+                           }
+                       ) {
+                           OnProblem = problem => Log.Warning(problem, "openadr", "ven", "messages")
+                       };
+
+            venMessageSessions [Key]       = new VENMessageSession(Entry, VENDoor.Of(Entry), Login, Transport, endpoint, Close);
             venMessageEndpoints[Entry.Id]  = endpoint;
 
             VENCameIn(Entry, Login, RemoteSocket, Transport, "speaking the JSON messages of OpenADR");
+
+            if (NotificationsWaitingFor(Entry.Id) is Int32 waiting and > 0)
+                Log.Info($"'{Login}' is told of {waiting} notification{(waiting == 1 ? "" : "s")} that waited for it, once it asks something.", "openadr", "subscription", "messages");
 
         }
 
@@ -358,9 +427,49 @@ namespace cloud.charging.open.GridOperator
 
             session.Endpoint.End(Because);
 
+            endpointsThatAsked.TryRemove(session.Endpoint, out _);
+
             venMessageEndpoints.TryRemove(KeyValuePair.Create(session.Entry.Id, session.Endpoint));
 
             VENWentOut(session.Entry, session.Login, session.Transport);
+
+        }
+
+        #endregion
+
+
+        #region (private) LetGoOfMessagesNoLongerLetIn()
+
+        /// <summary>
+        /// Let go of every connection of messages in now whose connection is no
+        /// longer what let it in; and of what waits to be told over a connection
+        /// that was removed or switched off.
+        /// </summary>
+        private void LetGoOfMessagesNoLongerLetIn()
+        {
+
+            foreach (var (key, session) in venMessageSessions.ToArray())
+                if (WhyNoLongerLetIn(session.Door) is String why)
+                {
+
+                    Log.Info($"'{session.Login}' is let go of: {why}.", "openadr", "ven", "connections");
+
+                    EndMessages(key, why);
+
+                    _ = Task.Run(async () => {
+                            try { await session.Close($"Let go of: {why}."); } catch { }
+                        });
+
+                }
+
+            foreach (var connectionId in notificationsWaiting.Keys.ToArray())
+                if (Connections.Connections.FirstOrDefault(entry => entry.Id == connectionId) is not { AutoConnect: true } &&
+                    notificationsWaiting.TryRemove(connectionId, out var dropped) &&
+                    dropped.Count > 0)
+                {
+                    Log.Info($"{dropped.Count} notification{(dropped.Count == 1 ? "" : "s")} for the connection '{connectionId}' are let go of: it was removed or switched off.",
+                             "openadr", "subscription", "messages");
+                }
 
         }
 
@@ -435,9 +544,15 @@ namespace cloud.charging.open.GridOperator
 
         /// <summary>
         /// Tell a VEN of what a subscription of it made over a connection of
-        /// messages asked to be told of: by Notify over that connection, where it
-        /// is in.
+        /// messages asked to be told of: by Notify over that connection - at
+        /// once where it is in, or once it is in again, where it is not; one
+        /// after the other, in the order they came.
         /// </summary>
+        /// <remarks>
+        /// What waits is kept in memory, for a while and up to a number: see
+        /// <see cref="NotificationsKeptFor"/> and <see cref="NotificationsKeptPerConnection"/>.
+        /// Nothing waits for a connection that is removed or switched off.
+        /// </remarks>
         private void TellOverMessages(OpenADRNotification Notification)
         {
 
@@ -448,37 +563,130 @@ namespace cloud.charging.open.GridOperator
                 return;
             }
 
-            if (!venMessageEndpoints.TryGetValue(connectionId, out var endpoint))
+            var what = $"{Notification.Notification.Operation} {Notification.Notification.ObjectType}";
+
+            if (Connections.Connections.FirstOrDefault(entry => entry.Id == connectionId) is not { AutoConnect: true })
             {
-                Log.Debug($"'{Notification.Subscription.ClientID}' is not connected now, and is not told of {Notification.Notification.Operation} {Notification.Notification.ObjectType}.",
+                Log.Debug($"'{Notification.Subscription.ClientID}' is not told of {what}: its connection '{connectionId}' is removed or switched off.",
                           "openadr", "subscription", "messages");
                 return;
             }
+
+            var waiting = notificationsWaiting.GetOrAdd(connectionId, _ => new ConcurrentQueue<WaitingNotification>());
+
+            waiting.Enqueue(new WaitingNotification(Notification, DateTimeOffset.UtcNow));
+
+            while (waiting.Count > Math.Max(NotificationsKeptPerConnection, 1) && waiting.TryDequeue(out var oldest))
+                Log.Warning($"'{oldest.Notification.Subscription.ClientID}' was not in for {NotificationsKeptPerConnection} notifications, and is not told of the oldest: " +
+                            $"{oldest.Notification.Notification.Operation} {oldest.Notification.Notification.ObjectType} of {oldest.Since:u}.",
+                            "openadr", "subscription", "messages");
+
+            if (!venMessageEndpoints.ContainsKey(connectionId))
+                Log.Debug($"'{Notification.Subscription.ClientID}' is not in now, and is told of {what} once it is.",
+                          "openadr", "subscription", "messages");
+
+            TellWhatWaits(connectionId);
+
+        }
+
+        #endregion
+
+        #region (private) TellWhatWaits(ConnectionId) / StillToBeTold(ConnectionId, Waiting)
+
+        /// <summary>
+        /// Tell what waits for the given connection over it, one after the other,
+        /// as long as its VEN is in and asked something over it - where nothing
+        /// tells it already.
+        /// </summary>
+        private void TellWhatWaits(String ConnectionId)
+        {
+
+            if (!notificationsTelling.TryAdd(ConnectionId, 0))
+                return;
 
             _ = Task.Run(async () => {
 
                     try
                     {
 
-                        var outcome = await endpoint.AskAsync(OpenADRActions.Notify, Notification.Notification.ToJSON());
+                        while (notificationsWaiting.TryGetValue(ConnectionId, out var waiting) &&
+                               waiting.TryPeek(out var next) &&
+                               venMessageEndpoints.TryGetValue(ConnectionId, out var endpoint) &&
+                               !endpoint.HasEnded &&
+                               endpointsThatAsked.ContainsKey(endpoint))
+                        {
 
-                        if (outcome.Succeeded)
-                            Interlocked.Increment(ref notificationsTold);
+                            var notification  = next.Notification;
+                            var what          = $"{notification.Notification.Operation} {notification.Notification.ObjectType}";
 
-                        else
-                            Log.Warning($"'{Notification.Subscription.ClientID}' answered the notification {Notification.Notification.Operation} {Notification.Notification.ObjectType} with {outcome}.",
-                                        "openadr", "subscription", "messages");
+                            if (!StillToBeTold(ConnectionId, next))
+                            {
+                                waiting.TryDequeue(out _);
+                                Log.Debug($"'{notification.Subscription.ClientID}' is no longer told of {what} of {next.Since:u}: it waited too long, or its subscription is gone.",
+                                          "openadr", "subscription", "messages");
+                                continue;
+                            }
+
+                            try
+                            {
+
+                                var outcome = await endpoint.AskAsync(OpenADRActions.Notify, notification.Notification.ToJSON());
+
+                                waiting.TryDequeue(out _);
+
+                                if (outcome.Succeeded)
+                                    Interlocked.Increment(ref notificationsTold);
+
+                                else
+                                    Log.Warning($"'{notification.Subscription.ClientID}' answered the notification {what} with {outcome}.",
+                                                "openadr", "subscription", "messages");
+
+                            }
+                            catch (Exception e) when (endpoint.HasEnded)
+                            {
+                                // Its connection went while it was told: told again once it is in.
+                                Log.Debug($"'{notification.Subscription.ClientID}' went while it was told of {what}, and is told again once it is in: {e.Message}",
+                                          "openadr", "subscription", "messages");
+                                break;
+                            }
+                            catch (Exception e)
+                            {
+                                waiting.TryDequeue(out _);
+                                Log.Warning($"'{notification.Subscription.ClientID}' could not be told of {what}: {e.Message}",
+                                            "openadr", "subscription", "messages");
+                            }
+
+                        }
 
                     }
-                    catch (OpenADRMessageException e)
+                    finally
                     {
-                        Log.Warning($"'{Notification.Subscription.ClientID}' could not be told of {Notification.Notification.Operation} {Notification.Notification.ObjectType}: {e.Message}",
-                                    "openadr", "subscription", "messages");
+                        notificationsTelling.TryRemove(ConnectionId, out _);
+                    }
+
+                    // What came while this was ending, for a VEN that is in and asked.
+                    if (notificationsWaiting.TryGetValue(ConnectionId, out var left) && !left.IsEmpty &&
+                        venMessageEndpoints.TryGetValue(ConnectionId, out var now)    && !now.HasEnded &&
+                        endpointsThatAsked.ContainsKey(now))
+                    {
+                        TellWhatWaits(ConnectionId);
                     }
 
                 });
 
         }
+
+        /// <summary>
+        /// Whether what waits is still to be told over the given connection: it
+        /// has not waited too long, and its subscription is still one of that
+        /// connection.
+        /// </summary>
+        private Boolean StillToBeTold(String               ConnectionId,
+                                      WaitingNotification  Waiting)
+
+            => DateTimeOffset.UtcNow - Waiting.Since <= NotificationsKeptFor &&
+               Waiting.Notification.Subscription.Id?.ToString() is String subscriptionId &&
+               Subscriptions.ConnectionOf(subscriptionId) == ConnectionId;
 
         #endregion
 

@@ -68,6 +68,45 @@ table.records.grid-table {
 }
 
 
+// --- The connections and subscriptions of a local controller ---------------
+//
+// A row of its own below the row of the local controller, the two side by
+// side where there is room: the row above says who it is, this one how it
+// connects and what it is told of.
+
+table.records.grid-table tr.local-controller td { border-bottom: none; }
+
+table.records.grid-table tr.ven-links td {
+    white-space:     normal;
+    padding-top:     0;
+    padding-bottom:  0.6rem;
+}
+
+.ven-links-grid {
+
+    display:                grid;
+    grid-template-columns:  repeat(auto-fit, minmax(18rem, 1fr));
+    gap:                    0.5rem 1.5rem;
+
+}
+
+ul.ven-list {
+
+    list-style:  none;
+    margin:      0.2rem 0 0;
+    padding:     0;
+
+    li { padding: 0.15rem 0; }
+
+    .chips {
+        display:         inline-flex;
+        vertical-align:  middle;
+        margin-right:    0.3rem;
+    }
+
+}
+
+
 // --- What is said once: a secret, the party ---------------------------------
 
 .secret-box {

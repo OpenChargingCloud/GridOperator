@@ -1,4 +1,4 @@
-import { api, type GridConnectionPoints, type LocalController, type LocalControllers } from '../api/client';
+import { api, type GridConnectionPoints, type LocalController, type LocalControllers, type VENConnection } from '../api/client';
 import { auth } from '../auth';
 import { dayAndTime } from '../grid/words';
 import { toURL } from '@node/basePath';
@@ -13,7 +13,9 @@ import { html, nothing, render, repeat } from '@node/view';
  * The local controllers of the charging pools on this grid, as the VENs of
  * OpenADR 3 that may sign in at its VTN: each with the pool it controls and
  * the grid connection point that pool is connected to, when it last asked
- * anything, and the limits meant for it.
+ * anything, and the limits meant for it - and below it the connections its
+ * VEN connects over, with their binding and where they stand, and its
+ * subscriptions, each told over a connection or to a webhook.
  *
  * Whoever may adds one; its secret is made then and said once, in a box above
  * the list, together with where it signs in - and kept nowhere but as a hash.
@@ -95,7 +97,7 @@ export const localControllersPage: Page = {
                                 </thead>
                                 <tbody>
                                     ${repeat(all.localControllers, controller => controller.venName, controller => html`
-                                        <tr>
+                                        <tr class="local-controller">
                                             <td><span class="mono">${controller.venName}</span>${controller.description ? html`<div class="small muted">${controller.description}</div>` : nothing}</td>
                                             <td class="mono">${controller.chargingPoolId}</td>
                                             <td><a class="mono" href="${toURL(`/gridConnectionPoints/${encodeURIComponent(controller.gridConnectionPointId)}`)}">${controller.gridConnectionPointId}</a></td>
@@ -105,6 +107,14 @@ export const localControllersPage: Page = {
                                             <td class="actions">
                                                 <button type="button" class="btn small"        ?disabled=${!mayChange} @click=${() => renew(controller)}>New secret</button>
                                                 <button type="button" class="btn small danger" ?disabled=${!mayChange} @click=${() => remove(controller)}>Remove</button>
+                                            </td>
+                                        </tr>
+                                        <tr class="ven-links">
+                                            <td colspan="7">
+                                                <div class="ven-links-grid">
+                                                    ${connectionsOf(controller)}
+                                                    ${subscriptionsOf(controller)}
+                                                </div>
                                             </td>
                                         </tr>
                                     `)}
@@ -176,6 +186,82 @@ export const localControllersPage: Page = {
                 </div>
 
             `);
+
+        }
+
+
+        /**
+         * The connections the VEN of a local controller connects over: over
+         * what, in which binding, switched on or off, whether it is in - or
+         * why not -, and, in the binding of messages, how many notifications
+         * wait to be told over it.
+         */
+        function connectionsOf(Controller: LocalController) {
+
+            return html`
+                <div class="ven-connections">
+                    <div class="small muted">Connections</div>
+                    ${Controller.connections.length === 0 ? html`
+                        <span class="small muted">None: it reaches the VTN over HTTPS only.</span>
+                    ` : html`
+                        <ul class="ven-list">
+                            ${Controller.connections.map(connection => html`
+                                <li class="ven-connection" data-id="${connection.id}">
+                                    <span class="chips">
+                                        <span class="chip">${connection.transport}</span>
+                                        <span class="chip">${bindingWord(connection.binding)}</span>
+                                        <span class="chip ${connection.enabled ? 'on' : ''}">${connection.enabled ? 'on' : 'off'}</span>
+                                        <span class="chip ${statusClass(connection)}" title="${connection.said ?? ''}">${statusWord(connection)}</span>
+                                        ${connection.binding === 'messages' ? html`
+                                            <span class="chip waiting ${connection.notificationsWaiting > 0 ? 'warn' : ''}">${connection.notificationsWaiting} notification(s) waiting</span>
+                                        ` : nothing}
+                                    </span>
+                                    <span class="mono">${connection.login ?? connection.id}</span>
+                                    ${connection.said ? html`<div class="small muted">${connection.said}</div>` : nothing}
+                                </li>
+                            `)}
+                        </ul>
+                    `}
+                </div>
+            `;
+
+        }
+
+
+        /**
+         * The subscriptions of a local controller: what each asks to be told
+         * of, and where - over the connection it was made over, or to a webhook.
+         */
+        function subscriptionsOf(Controller: LocalController) {
+
+            return html`
+                <div class="ven-subscriptions">
+                    <div class="small muted">Subscriptions</div>
+                    ${Controller.subscriptions.length === 0 ? html`
+                        <span class="small muted">None.</span>
+                    ` : html`
+                        <ul class="ven-list">
+                            ${Controller.subscriptions.map(subscription => html`
+                                <li class="ven-subscription">
+                                    ${subscription.objectOperations.map(objectOperation => html`
+                                        <div>
+                                            <span class="chips">
+                                                ${objectOperation.operations.map(operation => html`<span class="chip">${operation}</span>`)}
+                                                ${objectOperation.objects.   map(object    => html`<span class="chip on">${object}</span>`)}
+                                            </span>
+                                            ${objectOperation.callback === 'connection'
+                                                  ? html`over ${toldOverWord(Controller, subscription.toldOver)}`
+                                                  : html`to the webhook`}
+                                            <span class="mono small">${objectOperation.callbackUrl}</span>
+                                        </div>
+                                    `)}
+                                    <div class="small muted">${subscription.clientName}${subscription.created ? `, since ${dayAndTime(subscription.created)}` : ''}</div>
+                                </li>
+                            `)}
+                        </ul>
+                    `}
+                </div>
+            `;
 
         }
 
@@ -318,3 +404,29 @@ export const localControllersPage: Page = {
     }
 
 };
+
+
+/** How a binding of OpenADR is said: its REST API in a tunnel, or its JSON messages. */
+function bindingWord(Binding: VENConnection['binding']): string {
+    return Binding === 'rest' ? 'REST in a tunnel' : 'messages';
+}
+
+/** Where a connection stands, in a word: in now, or what was said of it last. */
+function statusWord(Connection: VENConnection): string {
+    return Connection.in ? 'in now' : Connection.status ?? 'nothing said yet';
+}
+
+/** The colour of where a connection stands: in, refused, or anything else. */
+function statusClass(Connection: VENConnection): string {
+    if (Connection.in)
+        return 'ok';
+    return Connection.status === 'refused' || Connection.status === 'failed' ? 'bad' : 'warn';
+}
+
+/** The connection a subscription is told over: by its login, where it is one of the local controller's - or none. */
+function toldOverWord(Controller: LocalController, ConnectionId: string | null): string {
+    if (ConnectionId === null)
+        return 'no connection now';
+    const connection = Controller.connections.find(one => one.id === ConnectionId);
+    return `the connection ${connection?.login ?? ConnectionId}`;
+}

@@ -388,6 +388,59 @@ namespace cloud.charging.open.GridOperator.Tests
 
         #endregion
 
+
+        #region ATunnelNoLongerWhatLetItIn_IsLetGoOf(Change)
+
+        /// <summary>
+        /// A tunnel in over its connection is let go of once the connection is no
+        /// longer what let it in - switched off, written down for the messages,
+        /// removed -, and is not let in again.
+        /// </summary>
+        [TestCase("off")]
+        [TestCase("messages")]
+        [TestCase("removed")]
+        public async Task ATunnelNoLongerWhatLetItIn_IsLetGoOf(String Change)
+        {
+
+            var grid      = await AStartedGrid();
+            var password  = AVENThatConnects(grid, "lc-1", "lc-paradies");
+
+            var (client, status, webSocket) = await Tunnel("lc-1", password);
+
+            await using (webSocket)
+            using (client)
+            {
+
+                Assert.That(client, Is.Not.Null, $"The tunnel was refused: {status}.");
+
+                var programs = await client!.GetAsync("openadr3/programs");
+
+                Assert.That(programs.IsSuccessStatusCode, Is.True, $"The VTN answered {programs.StatusCode} through the tunnel.");
+                Assert.That(grid.VENLoginsIn, Does.Contain("lc-1"));
+
+                VENMessagesTests.ChangeTheConnectionOf(grid, "lc-1", Change);
+
+                var until = DateTimeOffset.UtcNow.AddSeconds(10);
+
+                while (grid.VENLoginsIn.Contains("lc-1") && DateTimeOffset.UtcNow < until)
+                    await Task.Delay(50);
+
+                Assert.That(grid.VENLoginsIn, Does.Not.Contain("lc-1"), $"The tunnel was not let go of, its connection {Change}.");
+
+                Assert.That(async () => await client.GetAsync("openadr3/programs"), Throws.Exception, "The tunnel still answers.");
+
+            }
+
+            var (again, againStatus, againWebSocket) = await Tunnel("lc-1", password);
+            again?.Dispose();
+            await againWebSocket.DisposeAsync();
+
+            Assert.That(again, Is.Null, $"The tunnel was let in again, its connection {Change} ({againStatus}).");
+
+        }
+
+        #endregion
+
     }
 
 }

@@ -196,6 +196,41 @@ export interface OpenADRInfo {
     file:                string;
 }
 
+/**
+ * A connection a local controller connects to the grid operator over: who
+ * signs in, over what, in which binding of OpenADR - its REST API in a tunnel,
+ * or its JSON messages -, whether it is switched on, where it stands, and how
+ * many notifications wait to be told over it.
+ */
+export interface VENConnection {
+    id:                    string;
+    login:                 string | null;
+    description:           string | null;
+    transport:             'ws' | 'wss' | 'ssh';
+    binding:               'rest' | 'messages';
+    enabled:               boolean;
+    /** connected, waiting, refused, ... - or null, where nothing was said of it yet. */
+    status:                string | null;
+    said:                  string | null;
+    since:                 string | null;
+    in:                    boolean;
+    notificationsWaiting:  number;
+}
+
+/**
+ * A subscription of a local controller, as OpenADR 3 writes it, without a
+ * bearer token: each callback over the connection it was made over, or to a
+ * webhook.
+ */
+export interface VENSubscription {
+    id:                string | null;
+    clientName:        string;
+    created:           string | null;
+    objectOperations:  { objects: string[]; operations: string[]; callbackUrl: string; callback: 'connection' | 'webhook' }[];
+    /** The connection it is told over, where it was made over one. */
+    toldOver:          string | null;
+}
+
 /** A local controller that may sign in at the VTN. */
 export interface LocalController {
     venID:                  string;
@@ -207,6 +242,12 @@ export interface LocalController {
     lastSeen:               string | null;
     limits:                 string[];
     reports:                number;
+    /** The connections its VEN connects to the grid operator over. */
+    connections:            VENConnection[];
+    /** Its subscriptions, oldest first. */
+    subscriptions:          VENSubscription[];
+    /** The targets it may see. */
+    targets:                string[];
     /** Only in the answer that made it, or a new secret for it. */
     credentials?:           { tokenURL: string; vtnURL: string; clientID: string; clientSecret: string };
 }
