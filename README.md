@@ -32,7 +32,7 @@ the libraries it needs, builds it, and runs its tests.
 | `GridOperator/POI/` | the grid operator it is with its keys (`OwnGridOperator`), and what publishing changes (`PublicationPlan`) |
 | `GridOperator/GridOperator.POI.cs` | the grid operator and its grid connection points, changed |
 | `GridOperator/GridOperator.RoamingNetwork.cs` | the roaming network it publishes to, and the publication: GET of its head, COMMIT of a signed change set |
-| `GridOperator/OpenADR/` | the local controllers that may sign in, the limits, the store they are kept in, and the VTN at `/openadr3` |
+| `GridOperator/OpenADR/` | the local controllers that may sign in, the limits, the store they are kept in, and the VTN at `/openadr3` - over HTTPS, and to the local controllers that connect over the WebSocket port or SSH (`GridOperator.VENs.cs`, `GridOperator.VENConnecting.cs`) |
 | `GridOperator/CommandLine/` | its command line, at the console and over SSH: every node's commands, and `gridOperator`, `gridConnectionPoints`, `localControllers`, `limits` and `publish` |
 | `GridOperator/HTTPAPI/` | the JSON API: every node's, and `v1/gridOperator`, `v1/gridConnectionPoints`, `v1/configuration/roamingNetwork`, `v1/roamingNetwork/publication` and `v1/openADR/…` |
 | `GridOperator/Frontend/` | the web interface, bundled by webpack with what every node shares |
@@ -54,6 +54,22 @@ POST /openadr3/reports           what it did on one of its events
 ```
 
 A VEN changes no program, event or VEN: that is a 403. Every refusal is a problem of RFC 9457.
+
+### Over the WebSocket port or over SSH
+
+Where the configuration switches on `webSocketServer` - and its `ssh` - a local controller may connect rather
+than ask over HTTPS, in the binding of messages or in REST through the connection:
+
+```
+POST   /api/v1/openADR/localControllers/<VEN name>/connections       { "transport": "ws" | "ssh", "binding": "messages" | "rest", "sshKey" }
+DELETE /api/v1/openADR/localControllers/<VEN name>/connections/<id>
+```
+
+or `localControllers connect <VEN name> ws|ssh [messages|rest] [<ssh key>]` at the command line. A connection of
+the type VEN is written down for it and a login it comes under, with a password made then and said once - or,
+over SSH, the key it brought. The answer's `credentials` are named as the local controller has them: the URL is its
+`vtnURL` and the URL of its connection to the grid operator, beside the `openADRBinding`, the login, the password
+and, over SSH, the `sshHostKey` it pins. Removing the connection, or the local controller, removes the login too.
 
 
 ## Your participation

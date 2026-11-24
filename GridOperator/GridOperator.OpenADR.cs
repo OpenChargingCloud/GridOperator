@@ -487,6 +487,9 @@ namespace cloud.charging.open.GridOperator
 
             Subscriptions.RemoveAllOf(existing.ClientID);
 
+            // Nor does it connect over the WebSocket port or over SSH.
+            RemoveVENConnectionsOf(existing.VENName);
+
             Log.Notice($"'{Who}' removed the local controller '{existing.VENName}': it signs in at the OpenADR VTN no more.", "openadr", "web");
 
             Refusal = ChangeRefusal.Invalid;

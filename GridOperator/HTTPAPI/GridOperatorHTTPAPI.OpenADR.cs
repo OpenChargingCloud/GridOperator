@@ -126,6 +126,56 @@ namespace cloud.charging.open.GridOperator
 
         #endregion
 
+        #region (private) PostLocalControllerConnection(Request) / DeleteLocalControllerConnection(Request)
+
+        /// <summary>
+        /// POST /api/v1/openADR/localControllers/{venName}/connections with
+        /// { "transport": "ws" | "ssh", "binding": "messages" | "rest", "login",
+        /// "sshKey", "description" }: 201 with the connection, and what the
+        /// local controller connects with - its password the one time it is said.
+        /// </summary>
+        private Task<HTTPResponse> PostLocalControllerConnection(HTTPRequest Request)
+        {
+
+            if (!TryAuthorize(Request, Permission.Edit(GridOperatorAccess.OpenADR), true, out var user, out var refused))
+                return Task.FromResult(refused);
+
+            if (!TryParseJSONObject(Request, out var json, out var errorResponse))
+                return Task.FromResult(errorResponse);
+
+            if (!GridOperator.TryConnectLocalController(IdOf(Request), json, user.Id.ToString(), Request, out var made, out var error, out var refusal))
+                return Task.FromResult(Refused(Request, refusal, error));
+
+            return Task.FromResult(
+                       JSONResponse(Request, HTTPStatusCode.Created, GridOperator.VENConnectionMadeJSON(made))
+                   );
+
+        }
+
+        /// <summary>
+        /// DELETE /api/v1/openADR/localControllers/{venName}/connections/{id}:
+        /// the connection is taken away, and the login it came under; answered
+        /// with the local controllers.
+        /// </summary>
+        private Task<HTTPResponse> DeleteLocalControllerConnection(HTTPRequest Request)
+        {
+
+            if (!TryAuthorize(Request, Permission.Edit(GridOperatorAccess.OpenADR), true, out var user, out var refused))
+                return Task.FromResult(refused);
+
+            var connectionId = Request.ParsedURLParameters.Length > 1
+                                   ? Uri.UnescapeDataString(Request.ParsedURLParameters[1]).Trim()
+                                   : "";
+
+            if (!GridOperator.TryDisconnectLocalController(IdOf(Request), connectionId, user.Id.ToString(), out var error, out var refusal))
+                return Task.FromResult(Refused(Request, refusal, error));
+
+            return GetLocalControllers(Request);
+
+        }
+
+        #endregion
+
 
         #region (private) GetLimits(Request) / PostLimit(Request) / DeleteLimit(Request)
 

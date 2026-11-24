@@ -33,7 +33,8 @@ namespace cloud.charging.open.GridOperator.CommandLine
     /// The local controllers that may sign in at the OpenADR 3 VTN - the VENs
     /// of the charging pools on this grid: all of them, one line each; "add"
     /// one, which says its secret the one time; "secret" makes a new one;
-    /// "remove" one.
+    /// "remove" one; "connect" one over the WebSocket port or over SSH, which
+    /// says its password the one time, and "disconnect" such a connection.
     /// </summary>
     public class LocalControllersCommand(GridOperatorCLI CLI) : ACLICommand<GridOperatorCLI>(CLI),
                                                                ICLICommand
@@ -59,16 +60,28 @@ namespace cloud.charging.open.GridOperator.CommandLine
                            : [];
 
             if (Arguments.Length == 2 && CommandName.Equals(Arguments[0], StringComparison.OrdinalIgnoreCase))
-                return new[] { "add", "secret", "remove" }.
+                return new[] { "add", "secret", "remove", "connect", "disconnect" }.
                            Where (word => word.StartsWith(Arguments[1], StringComparison.OrdinalIgnoreCase)).
                            Select(word => SuggestionResponse.ParameterCompleted($"{CommandName} {word}"));
 
             if (Arguments.Length == 3 && CommandName.Equals(Arguments[0], StringComparison.OrdinalIgnoreCase) &&
-                (Arguments[1].Equals("secret", StringComparison.OrdinalIgnoreCase) || Arguments[1].Equals("remove", StringComparison.OrdinalIgnoreCase)))
+                new[] { "secret", "remove", "connect", "disconnect" }.Contains(Arguments[1], StringComparer.OrdinalIgnoreCase))
                 return cli.GridOperator.OpenADR.Logins().
                            Select(login => login.VENName).
                            Where (name  => name.StartsWith(Arguments[2], StringComparison.OrdinalIgnoreCase)).
                            Select(name  => SuggestionResponse.ParameterCompleted($"{CommandName} {Arguments[1]} {name}"));
+
+            if (Arguments.Length == 4 && CommandName.Equals(Arguments[0], StringComparison.OrdinalIgnoreCase) &&
+                Arguments[1].Equals("connect", StringComparison.OrdinalIgnoreCase))
+                return GridOperator.VENTransports.
+                           Where (word => word.StartsWith(Arguments[3], StringComparison.OrdinalIgnoreCase)).
+                           Select(word => SuggestionResponse.ParameterCompleted($"{CommandName} connect {Arguments[2]} {word}"));
+
+            if (Arguments.Length == 5 && CommandName.Equals(Arguments[0], StringComparison.OrdinalIgnoreCase) &&
+                Arguments[1].Equals("connect", StringComparison.OrdinalIgnoreCase))
+                return GridOperator.VENBindings.
+                           Where (word => word.StartsWith(Arguments[4], StringComparison.OrdinalIgnoreCase)).
+                           Select(word => SuggestionResponse.ParameterCompleted($"{CommandName} connect {Arguments[2]} {Arguments[3]} {word}"));
 
             return [];
 
@@ -89,16 +102,18 @@ namespace cloud.charging.open.GridOperator.CommandLine
 
                 var what = rest[0].ToLowerInvariant();
 
-                if (what is "add" or "secret" or "remove")
+                if (what is "add" or "secret" or "remove" or "connect" or "disconnect")
                 {
 
                     if (!cli.MayDo(Permission.Edit(GridOperatorAccess.OpenADR), $"{CommandName} {what}", out var notAllowed))
                         return Task.FromResult<String[]>([ notAllowed ]);
 
                     return Task.FromResult(what switch {
-                        "add"     => Added  (rest[1..]),
-                        "secret"  => Renewed(rest[1..]),
-                        _         => Removed(rest[1..])
+                        "add"         => Added       (rest[1..]),
+                        "secret"      => Renewed     (rest[1..]),
+                        "connect"     => Connected   (rest[1..]),
+                        "disconnect"  => Disconnected(rest[1..]),
+                        _             => Removed     (rest[1..])
                     });
 
                 }
@@ -119,9 +134,11 @@ namespace cloud.charging.open.GridOperator.CommandLine
 
             return Task.FromResult<String[]>([
                        .. logins.Select(login => {
-                              var seen = cli.GridOperator.OpenADR.LastSeen(login.VENName);
+                              var seen         = cli.GridOperator.OpenADR.LastSeen(login.VENName);
+                              var connections  = cli.GridOperator.VENConnectionsText(login.VENName);
                               return $"{login.VENName.PadRight(width)}  pool {login.ChargingPoolId}, behind {login.GridConnectionPointId}, " +
-                                     (seen.HasValue ? $"last seen {seen.Value.ToLocalTime():HH:mm:ss}" : "not seen since this start");
+                                     (seen.HasValue ? $"last seen {seen.Value.ToLocalTime():HH:mm:ss}" : "not seen since this start") +
+                                     (connections.Count > 0 ? $"; connects over {String.Join(" and ", connections.Select(connection => $"({connection})"))}" : "");
                           }),
                        $"They sign in at {cli.GridOperator.OpenADRTokenURL}."
                    ]);
@@ -134,7 +151,8 @@ namespace cloud.charging.open.GridOperator.CommandLine
 
         public override String Help()
 
-            => $"{CommandName} [add <venName> <chargingPoolId> <gridConnectionPointId> | secret <venName> | remove <venName>] - the local controllers that may sign in at the OpenADR 3 VTN";
+            => $"{CommandName} [add <venName> <chargingPoolId> <gridConnectionPointId> | secret <venName> | remove <venName> | " +
+               $"connect <venName> ws|ssh [messages|rest] [<ssh key>] | disconnect <venName> <connectionId>] - the local controllers that may sign in at the OpenADR 3 VTN, and connect to it";
 
         #endregion
 
@@ -184,6 +202,62 @@ namespace cloud.charging.open.GridOperator.CommandLine
 
             return cli.GridOperator.TryRemoveLocalController(Arguments[0], cli.Who, out var error, out _)
                        ? [ $"The local controller '{Arguments[0]}' signs in no more." ]
+                       : [ error ];
+
+        }
+
+        /// <summary>
+        /// "connect &lt;venName&gt; ws|ssh [messages|rest] [&lt;ssh key&gt;]": the
+        /// key, if any, as one line of an authorized_keys file, its spaces and all.
+        /// </summary>
+        private String[] Connected(String[] Arguments)
+        {
+
+            if (Arguments.Length < 2)
+                return [ $"Usage: {CommandName} connect <venName> ws|ssh [messages|rest] [<ssh key>]" ];
+
+            var json   = new JObject(new JProperty("transport", Arguments[1]));
+            var keyAt  = 2;
+
+            if (Arguments.Length > 2 && GridOperator.VENBindings.Contains(Arguments[2], StringComparer.OrdinalIgnoreCase))
+            {
+                json["binding"] = Arguments[2];
+                keyAt = 3;
+            }
+
+            if (Arguments.Length > keyAt)
+                json["sshKey"] = String.Join(" ", Arguments[keyAt..]);
+
+            if (!cli.GridOperator.TryConnectLocalController(Arguments[0], json, cli.Who, null, out var made, out var error, out _))
+                return [ error ];
+
+            return [
+                       $"The local controller '{made.Connection.VEN}' may connect over {made.URL} now, in the binding of {ConnectionEntryBinding(made)} - its connection '{made.Connection.Id}'.",
+                       .. made.Password is not null
+                              ? new[] { $"  login     {made.Login}",
+                                        $"  password  {made.Password}",
+                                        "The password is said this once." }
+                              : [ $"  login     {made.Login}, with its SSH key" ],
+                       .. made.SSHHostKey is not null
+                              ? new[] { $"  host key  {made.SSHHostKey}" }
+                              : [],
+                       "At the local controller this URL is its \"vtnURL\", and the URL of its connection to this grid operator."
+                   ];
+
+        }
+
+        private static String ConnectionEntryBinding(VENConnectionMade Made)
+
+            => protocols.WWCP.Node.Connections.ConnectionEntry.AsText(Made.Connection.OpenADRBinding) ?? "messages";
+
+        private String[] Disconnected(String[] Arguments)
+        {
+
+            if (Arguments.Length != 2)
+                return [ $"Usage: {CommandName} disconnect <venName> <connectionId>" ];
+
+            return cli.GridOperator.TryDisconnectLocalController(Arguments[0], Arguments[1], cli.Who, out var error, out _)
+                       ? [ $"The connection '{Arguments[1]}' of the local controller '{Arguments[0]}' is taken away, and the login it came under." ]
                        : [ error ];
 
         }

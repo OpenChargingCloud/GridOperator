@@ -125,6 +125,8 @@ namespace cloud.charging.open.GridOperator
             AddHandler(HTTPPath.Root + "v1/openADR/localControllers",                        PostLocalController,           HTTPMethod.POST);
             AddHandler(HTTPPath.Root + "v1/openADR/localControllers/{venName}",              DeleteLocalController,         HTTPMethod.DELETE);
             AddHandler(HTTPPath.Root + "v1/openADR/localControllers/{venName}/secret",       PostLocalControllerSecret,     HTTPMethod.POST);
+            AddHandler(HTTPPath.Root + "v1/openADR/localControllers/{venName}/connections",  PostLocalControllerConnection,    HTTPMethod.POST);
+            AddHandler(HTTPPath.Root + "v1/openADR/localControllers/{venName}/connections/{id}", DeleteLocalControllerConnection, HTTPMethod.DELETE);
             AddHandler(HTTPPath.Root + "v1/openADR/limits",                                  GetLimits,                     HTTPMethod.GET);
             AddHandler(HTTPPath.Root + "v1/openADR/limits",                                  PostLimit,                     HTTPMethod.POST);
             AddHandler(HTTPPath.Root + "v1/openADR/limits/{id}",                             DeleteLimit,                   HTTPMethod.DELETE);
