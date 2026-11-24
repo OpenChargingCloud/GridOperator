@@ -211,7 +211,7 @@ namespace cloud.charging.open.GridOperator
 
         #endregion
 
-        #region (private) GetPublication(Request) / PostPublication(Request)
+        #region (private) GetPublication(Request) / PostPublication(Request) / PostAcceptAddition(Request)
 
         /// <summary>
         /// GET /api/v1/roamingNetwork/publication: what publishing would change
@@ -245,16 +245,45 @@ namespace cloud.charging.open.GridOperator
 
             var result = await GridOperator.Publish(user.Id.ToString());
 
-            return result.Success
-                       ? JSONResponse(Request, HTTPStatusCode.OK, result.ToJSON(GridOperator.RoamingNetworkSettings.URL))
+            return PublicationResponse(Request, result);
+
+        }
+
+        /// <summary>
+        /// POST /api/v1/roamingNetwork/publication/accept: the change set of the
+        /// roaming network's operator that adds the grid operator, waiting there
+        /// for its identity key, signed with it. 409 where none waits that it
+        /// signs, 502 where the roaming network refused or could not be reached.
+        /// </summary>
+        private async Task<HTTPResponse> PostAcceptAddition(HTTPRequest Request)
+        {
+
+            if (!TryAuthorize(Request, Permission.Run(GridOperatorAccess.POI), true, out var user, out var refused))
+                return refused;
+
+            var result = await GridOperator.AcceptAddition(user.Id.ToString());
+
+            return PublicationResponse(Request, result);
+
+        }
+
+        /// <summary>
+        /// What came of a publication or an acceptance, as the JSON API says it.
+        /// </summary>
+        private HTTPResponse PublicationResponse(HTTPRequest        Request,
+                                                 PublicationResult  Result)
+        {
+
+            return Result.Success
+                       ? JSONResponse(Request, HTTPStatusCode.OK, Result.ToJSON(GridOperator.RoamingNetworkSettings.URL))
                        : ErrorJSON   (Request,
-                                      result.Refusal switch {
+                                      Result.Refusal switch {
                                           ChangeRefusal.Conflict  => HTTPStatusCode.Conflict,
                                           ChangeRefusal.Invalid   => HTTPStatusCode.BadRequest,
                                           _                       => HTTPStatusCode.BadGateway
                                       },
-                                      result.Message,
-                                      new Newtonsoft.Json.Linq.JProperty("publication", result.ToJSON(GridOperator.RoamingNetworkSettings.URL)));
+                                      Result.Message,
+                                      new Newtonsoft.Json.Linq.JProperty("publication", Result.ToJSON(GridOperator.RoamingNetworkSettings.URL)));
 
         }
 

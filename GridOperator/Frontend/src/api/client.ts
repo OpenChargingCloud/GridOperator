@@ -177,6 +177,8 @@ export interface Publication {
     revision:  number | null;
     changes:   number;
     steps:     PublicationStep[];
+    /** The change sets waiting at the roaming network that add the grid operator, and wait for its identity key. */
+    awaiting:  string[];
     answer:    Record<string, unknown> | null;
 }
 
@@ -336,7 +338,8 @@ export const api = {
         settings:      ()                            => request<RoamingNetworkSettings> ('GET',  '/configuration/roamingNetwork'),
         saveSettings:  (settings: { url: string })   => request<RoamingNetworkSettings> ('PUT',  '/configuration/roamingNetwork', settings),
         preview:       ()                            => request<Publication>            ('GET',  '/roamingNetwork/publication'),
-        publish:       ()                            => request<Publication>            ('POST', '/roamingNetwork/publication', {})
+        publish:       ()                            => request<Publication>            ('POST', '/roamingNetwork/publication', {}),
+        accept:        ()                            => request<Publication>            ('POST', '/roamingNetwork/publication/accept', {})
     },
 
     openADR: {

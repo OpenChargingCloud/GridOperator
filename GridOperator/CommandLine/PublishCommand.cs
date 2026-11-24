@@ -30,7 +30,9 @@ namespace cloud.charging.open.GridOperator.CommandLine
     /// <summary>
     /// The grid operator and its grid connection points, published to the
     /// roaming network: what that would change, or - with "now" - one change
-    /// set of its head, signed by the grid operator and committed.
+    /// set of its head, signed by the grid operator and committed; with
+    /// "accept", the change set of the roaming network's operator that adds it,
+    /// signed with its identity key.
     /// </summary>
     public class PublishCommand(GridOperatorCLI CLI) : ACLICommand<GridOperatorCLI>(CLI),
                                                       ICLICommand
@@ -55,9 +57,11 @@ namespace cloud.charging.open.GridOperator.CommandLine
                            ? [ SuggestionResponse.CommandCompleted(CommandName) ]
                            : [];
 
-            if (Arguments.Length == 2 && CommandName.Equals(Arguments[0], StringComparison.OrdinalIgnoreCase) &&
-                "now".StartsWith(Arguments[1], StringComparison.OrdinalIgnoreCase))
-                return [ SuggestionResponse.ParameterCompleted($"{CommandName} now") ];
+            if (Arguments.Length == 2 && CommandName.Equals(Arguments[0], StringComparison.OrdinalIgnoreCase))
+                return new[] { "now", "accept" }.
+                           Where (word => word.StartsWith(Arguments[1], StringComparison.OrdinalIgnoreCase)).
+                           Select(word => SuggestionResponse.ParameterCompleted($"{CommandName} {word}")).
+                           ToArray();
 
             return [];
 
@@ -71,26 +75,30 @@ namespace cloud.charging.open.GridOperator.CommandLine
                                                      CancellationToken  CancellationToken)
         {
 
-            var now = Arguments.Length == 2 && Arguments[1].Equals("now", StringComparison.OrdinalIgnoreCase);
+            var now     = Arguments.Length == 2 && Arguments[1].Equals("now",    StringComparison.OrdinalIgnoreCase);
+            var accept  = Arguments.Length == 2 && Arguments[1].Equals("accept", StringComparison.OrdinalIgnoreCase);
 
-            if (Arguments.Length > 2 || (Arguments.Length == 2 && !now))
+            if (Arguments.Length > 2 || (Arguments.Length == 2 && !now && !accept))
                 return [ $"Usage: {Help()}" ];
 
-            if (!cli.MayDo(now ? Permission.Run (GridOperatorAccess.POI)
-                               : Permission.Read(GridOperatorAccess.POI),
-                           now ? $"{CommandName} now" : CommandName,
+            if (!cli.MayDo(now || accept ? Permission.Run (GridOperatorAccess.POI)
+                                         : Permission.Read(GridOperatorAccess.POI),
+                           now ? $"{CommandName} now" : accept ? $"{CommandName} accept" : CommandName,
                            out var refused))
                 return [ refused ];
 
-            var result = now
-                             ? await cli.GridOperator.Publish(cli.Who, CancellationToken)
-                             : await cli.GridOperator.PreviewPublication(CancellationToken);
+            var result = now    ? await cli.GridOperator.Publish           (cli.Who, CancellationToken)
+                       : accept ? await cli.GridOperator.AcceptAddition    (cli.Who, CancellationToken)
+                       :          await cli.GridOperator.PreviewPublication(CancellationToken);
 
             return [
                        result.Message,
                        .. (result.Plan?.Steps ?? []).Select(step => $"  {step.Kind,-9}  {step.Text}"),
-                       .. (!now && result.Success && result.Plan is { IsParty: true, IsEmpty: false }
+                       .. (!now && !accept && result.Success && result.Plan is { IsParty: true, IsEmpty: false }
                               ? new[] { $"'{CommandName} now' signs it and commits it." }
+                              : []),
+                       .. (!now && !accept && result.Success && result.Awaiting is { Count: > 0 }
+                              ? new[] { $"'{CommandName} accept' signs it with the identity key." }
                               : [])
                    ];
 
@@ -102,7 +110,8 @@ namespace cloud.charging.open.GridOperator.CommandLine
 
         public override String Help()
 
-            => $"{CommandName} [now] - what publishing the grid operator to its roaming network would change; with 'now', signed and committed";
+            => $"{CommandName} [now|accept] - what publishing the grid operator to its roaming network would change; with 'now', signed and committed; " +
+                "with 'accept', the change set adding it there signed with its identity key";
 
         #endregion
 

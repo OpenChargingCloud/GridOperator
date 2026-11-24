@@ -41,6 +41,7 @@ namespace cloud.charging.open.GridOperator
     /// | <c>GET v1/configuration/roamingNetwork</c>, <c>PUT</c> | the roaming network it publishes to: <c>{ "url" }</c> |
     /// | <c>GET v1/roamingNetwork/publication</c> | what publishing would change there now |
     /// | <c>POST v1/roamingNetwork/publication</c> | publish: one change set, signed by the grid operator |
+    /// | <c>POST v1/roamingNetwork/publication/accept</c> | accept being added: the change set adding it, waiting there, signed with its identity key |
     /// | <c>GET v1/openADR</c> | the VTN: where it is, its program, how much it has |
     /// | <c>GET v1/openADR/localControllers</c>, <c>POST</c> | the local controllers that may sign in; POST adds one, 201 with its secret, once |
     /// | <c>DELETE v1/openADR/localControllers/{venName}</c> | one signs in no more |
@@ -120,6 +121,7 @@ namespace cloud.charging.open.GridOperator
             AddHandler(HTTPPath.Root + "v1/configuration/roamingNetwork",                    PutRoamingNetworkSettings,     HTTPMethod.PUT);
             AddHandler(HTTPPath.Root + "v1/roamingNetwork/publication",                      GetPublication,                HTTPMethod.GET);
             AddHandler(HTTPPath.Root + "v1/roamingNetwork/publication",                      PostPublication,               HTTPMethod.POST);
+            AddHandler(HTTPPath.Root + "v1/roamingNetwork/publication/accept",               PostAcceptAddition,            HTTPMethod.POST);
 
             AddHandler(HTTPPath.Root + "v1/openADR",                                         GetOpenADR,                    HTTPMethod.GET);
             AddHandler(HTTPPath.Root + "v1/openADR/localControllers",                        GetLocalControllers,           HTTPMethod.GET);

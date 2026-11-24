@@ -15,7 +15,10 @@ log - it is three things:
   connected to its grid, at which voltage level, with which contracted power, market and metering locations.
   Both are published to a roaming network - e.g. `http://127.0.0.1:2356/poi/RNs/QA` of a RoamingHub - with one
   change set of its head, signed by the grid operator, once the operator of that network has added it as a party
-  with the public halves of its keys.
+  with the public halves of its keys. That addition waits there for the signature of its identity key, the proof
+  that it holds it: accepting signs it - `publish accept`, `POST /api/v1/roamingNetwork/publication/accept`, or
+  Accept on the page of the roaming network -, and only a change set that adds this grid operator with its own keys
+  and changes nothing else.
 - **An OpenADR 3 VTN** for the local controllers of the charging pools behind its grid connection points - its
   VENs. Each is added with the pool it controls and the point that pool is connected to, and gets a client secret,
   said once. It signs in with the client credentials of OAuth 2.0, reads the limits meant for it - events of the

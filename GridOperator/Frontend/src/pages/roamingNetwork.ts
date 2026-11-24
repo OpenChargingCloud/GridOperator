@@ -94,6 +94,9 @@ export const roamingNetworkPage: Page = {
                                 <button type="button" class="btn" @click=${preview}>What would change</button>
                                 <button type="button" class="btn primary" ?disabled=${!mayPublish || publication?.isParty !== true || publication.changes === 0}
                                         @click=${publish}>Publish</button>
+                                ${(publication?.awaiting.length ?? 0) > 0 ? html`
+                                    <button type="button" class="btn primary" ?disabled=${!mayPublish} @click=${accept}>Accept</button>
+                                ` : nothing}
                                 <span id="publication-note" class="form-notice" role="status"></span>
                             </div>
 
@@ -101,7 +104,7 @@ export const roamingNetworkPage: Page = {
 
                             ${publication !== null ? html`
                                 <p>${publication.message}</p>
-                                ${publication.isParty === false ? html`
+                                ${publication.isParty === false && publication.awaiting.length === 0 ? html`
                                     <p class="small">Its operator adds this grid operator with what <a href="${toURL('/gridOperator')}">Grid operator → Party</a> has.</p>
                                 ` : nothing}
                                 ${publication.steps.length > 0 ? html`
@@ -197,6 +200,15 @@ export const roamingNetworkPage: Page = {
                 return;
 
             await ask(() => api.roamingNetwork.publish(), 'Publishing ...');
+
+        }
+
+        async function accept(): Promise<void> {
+
+            if (!confirm(`Sign the change set ${publication?.awaiting[0] ?? ''} that adds ${current?.gridOperatorId} to ${current?.url} with its identity key?`))
+                return;
+
+            await ask(() => api.roamingNetwork.accept(), 'Accepting ...');
 
         }
 

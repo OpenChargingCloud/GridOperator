@@ -17,7 +17,13 @@
 
 #region Usings
 
+using System.Security.Cryptography;
+using System.Text;
+
 using Newtonsoft.Json.Linq;
+
+using Org.BouncyCastle.Crypto.Parameters;
+using Org.BouncyCastle.Math;
 
 using NUnit.Framework;
 
@@ -53,6 +59,108 @@ namespace cloud.charging.open.GridOperator.Tests
                     I18NString.Create(Languages.en, "Quality assurance"),
                     Created:        DateTimeOffset.Parse("2026-01-01T00:00:00Z"),
                     GridOperators:  [ GridOperator ]);
+
+        #endregion
+
+        #region (helper) Key(Seed, Curve)
+
+        /// <summary>
+        /// A key of its own for every seed, the same every time.
+        /// </summary>
+        private static (ECPrivateKeyParameters Private, POIPublicKey Public) Key(String     Seed,
+                                                                                 COSECurve  Curve)
+        {
+
+            var parameters  = Curve.DomainParameters!;
+            var d           = new BigInteger(1, SHA512.HashData(Encoding.UTF8.GetBytes(Seed))).Mod(parameters.N.Subtract(BigInteger.One)).Add(BigInteger.One);
+            var privateKey  = new ECPrivateKeyParameters(d, parameters);
+
+            return (privateKey, new POIPublicKey(COSEKey.From(privateKey)));
+
+        }
+
+        #endregion
+
+        #region (helper) OperatedNetwork()
+
+        private static readonly (ECPrivateKeyParameters Private, POIPublicKey Public)  OperatorSigningKey   = Key("QA-RNO:signing",  COSECurve.P256);
+        private static readonly (ECPrivateKeyParameters Private, POIPublicKey Public)  OperatorIdentityKey  = Key("QA-RNO:identity", COSECurve.P521);
+
+        /// <summary>
+        /// The roaming network QA as a hub operates it: an operator with an
+        /// identity key, a signing key certified by it, and a key statement -
+        /// whose "signedAt" and "validUntil" are texts that look like dates.
+        /// </summary>
+        private static RoamingNetwork OperatedNetwork()
+        {
+
+            var operatorId  = RoamingNetworkOperator_Id.Parse("QA-RNO");
+            var created     = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+            var json        = new RoamingNetwork(RoamingNetwork_Id.Parse("QA"),
+                                                 I18NString.Create(Languages.en, "Quality assurance"),
+                                                 Created: created).ToJSON();
+
+            json[RoamingNetwork.PropertyKeys.Operator] = new JObject(
+                new JProperty("@id",                                          operatorId.ToString()),
+                new JProperty("created",                                      json["created"]),
+                new JProperty("lastChange",                                   json["created"]),
+                new JProperty(POIPartyKeys.IdentityKeysProperty,              new JArray(OperatorIdentityKey.Public.ToJSON(Embedded: true))),
+                new JProperty(RoamingNetworkSigningKeyCertificate.JSONProperty, new JArray(RoamingNetworkSigningKeyCertificate.Create(OperatorIdentityKey.Private,
+                                                                                                                                     COSEAlgorithm.ES512,
+                                                                                                                                     operatorId,
+                                                                                                                                     OperatorSigningKey.Public,
+                                                                                                                                     created).ToJSON(Embedded: true))),
+                new JProperty(RoamingNetworkKeyStatement.JSONProperty,        RoamingNetworkKeyStatement.Create(OperatorIdentityKey.Private,
+                                                                                                                COSEAlgorithm.ES512,
+                                                                                                                1,
+                                                                                                                RoamingNetwork_Id.Parse("QA"),
+                                                                                                                operatorId,
+                                                                                                                [ OperatorIdentityKey.Public ],
+                                                                                                                created,
+                                                                                                                DateTimeOffset.Parse("2036-01-01T00:00:00Z")).ToJSON(Embedded: true))
+            );
+
+            Assert.That(RoamingNetwork.TryParse(json, out var network, out var error), Is.True, error);
+
+            return network!;
+
+        }
+
+        #endregion
+
+        #region (helper) Addition(Network, GridOperator)
+
+        /// <summary>
+        /// The change set the operator of the roaming network adds the given
+        /// grid operator with, signed by it - as a hub makes it.
+        /// </summary>
+        private static RoamingNetworkChangeSet Addition(RoamingNetwork            Network,
+                                                        params POIGridOperator[]  GridOperators)
+
+            => Network.CreateChangeSet(GridOperators.Select(RoamingNetworkChange.Add).ToArray()).
+                       Sign(OperatorSigningKey.Private, OperatorSigningKey.Public.Id, COSEAlgorithm.ES256);
+
+        #endregion
+
+        #region (helper) AsAdded(GridOperator, Change = null)
+
+        /// <summary>
+        /// The grid operator as its party is added: without its points.
+        /// </summary>
+        private static POIGridOperator AsAdded(GridOperator           Grid,
+                                               Action<JObject>?       Change = null)
+        {
+
+            var json = Grid.Own.Entity.ToJSON();
+            json.Remove("gridConnectionPoints");
+
+            Change?.Invoke(json);
+
+            Assert.That(POIGridOperator.TryParse(json, out var party, out var error), Is.True, error);
+
+            return party!;
+
+        }
 
         #endregion
 
@@ -198,6 +306,152 @@ namespace cloud.charging.open.GridOperator.Tests
             Assert.Multiple(() => {
                 Assert.That(plan.IsParty, Is.False);
                 Assert.That(plan.Changes, Is.Empty);
+            });
+
+        }
+
+        #endregion
+
+        #region AddedByTheHubAcceptedAndPublished()
+
+        /// <summary>
+        /// The roaming network QA as a hub operates it - with the key statement
+        /// of its operator - on the POI API beside the grid operator: its head is
+        /// read, as is the revision of its head commit; nothing is published nor
+        /// accepted while QA does not know it. Its operator adds it, with a change
+        /// set that waits for the identity key of the grid operator; the preview
+        /// says so, accepting signs it, and it is committed - and then its point
+        /// is published.
+        /// </summary>
+        [Test]
+        public async Task AddedByTheHubAcceptedAndPublished()
+        {
+
+            var grid = await TestPorts.StartedOnFreshPorts(() => GridOperatorFrom());
+
+            Assert.That(grid.TryAddGridConnectionPoint(APoint("GCP-1"), "test", out _, out var error, out _), Is.True, error);
+
+            var history  = RoamingNetworkHistory.Start(OperatedNetwork());
+            var poi      = new POI_API(grid.HTTPServer, RootPath: HTTPPath.Parse("/poi")) {
+                               AuthorizeChangeSetSubmission = (request, changeSet) => true
+                           };
+
+            Assert.That(poi.AddRoamingNetworkHistory(history), Is.True);
+            Assert.That(grid.TryUpdateRoamingNetworkSettings(new JObject(new JProperty("url", $"{address}poi/RNs/QA")), "test", out error, out _), Is.True, error);
+
+            #region Not a party yet: the head is read, nothing is published, nothing accepted
+
+            var before = await grid.PreviewPublication();
+
+            Assert.Multiple(() => {
+                Assert.That(before.Success,          Is.True, before.Message);
+                Assert.That(before.Plan!.IsParty,    Is.False);
+                Assert.That(before.Awaiting,         Is.Empty);
+                Assert.That(before.Revision,         Is.EqualTo(history.Head.Commit.Revision));
+            });
+
+            var refused = await grid.Publish("test");
+
+            Assert.That(refused.Refusal, Is.EqualTo(ChangeRefusal.Conflict), refused.Message);
+
+            var nothingToAccept = await grid.AcceptAddition("test");
+
+            Assert.Multiple(() => {
+                Assert.That(nothingToAccept.Success,  Is.False);
+                Assert.That(nothingToAccept.Refusal,  Is.EqualTo(ChangeRefusal.Conflict));
+                Assert.That(nothingToAccept.Message,  Does.Contain("No change set adding it waits there"));
+            });
+
+            #endregion
+
+            #region Its operator adds it: the change set waits for its identity key
+
+            var addition  = Addition(history.Head.RoamingNetwork, AsAdded(grid));
+            var waiting   = history.CoSign(addition);
+
+            Assert.That(waiting.Status, Is.EqualTo(RoamingNetworkCoSigningStatus.Pending), waiting.ErrorResponse);
+
+            var offered = await grid.PreviewPublication();
+
+            Assert.Multiple(() => {
+                Assert.That(offered.Awaiting,  Is.EqualTo(new[] { addition.Id.ToString() }));
+                Assert.That(offered.Message,   Does.Contain("accepting signs it"));
+            });
+
+            #endregion
+
+            #region Accepted: committed, and the point published after it
+
+            var accepted = await grid.AcceptAddition("test");
+
+            Assert.That(accepted.Success, Is.True, accepted.Message + " " + accepted.Answer);
+
+            Assert.Multiple(() => {
+                Assert.That(history.Head.RoamingNetwork.GridOperators.TryGet(grid.Own.Id, out _),  Is.True);
+                Assert.That(history.PendingChangeSets,                                             Is.Empty);
+                Assert.That(accepted.Plan!.IsParty,                                                Is.True);
+                Assert.That(accepted.Revision,                                                     Is.EqualTo(history.Head.Commit.Revision));
+            });
+
+            var again = await grid.AcceptAddition("test");
+
+            Assert.That(again.Message, Does.Contain("there is nothing to accept"));
+
+            var published = await grid.Publish("test");
+
+            Assert.That(published.Success, Is.True, published.Message + " " + published.Answer);
+
+            Assert.Multiple(() => {
+                Assert.That(history.Head.RoamingNetwork.GridOperators.TryGet(grid.Own.Id, out var there),  Is.True);
+                Assert.That(there!.GridConnectionPoints.Select(point => point.Id.ToString()),              Is.EqualTo(new[] { "GCP-1" }));
+                Assert.That(published.Revision,                                                            Is.EqualTo(history.Head.Commit.Revision));
+            });
+
+            #endregion
+
+        }
+
+        #endregion
+
+        #region ItsIdentityKeyVouchesForNothingButItself()
+
+        /// <summary>
+        /// The identity key of the grid operator signs the change set that adds
+        /// it with its own keys - and no other: not one that gives it a key not
+        /// its own, adds another party beside it, or that it signed already.
+        /// </summary>
+        [Test]
+        public void ItsIdentityKeyVouchesForNothingButItself()
+        {
+
+            var grid     = GridOperatorFrom();
+            var network  = OperatedNetwork();
+            var foreign  = Key("someone else:signing", COSECurve.P256).Public;
+            var addition = Addition(network, AsAdded(grid));
+
+            Assert.Multiple(() => {
+
+                Assert.That(PendingAddition.WhyNotToSign(network, addition, grid.Own),
+                            Is.Null);
+
+                Assert.That(PendingAddition.WhyNotToSign(network, grid.Own.SignWithIdentityKey(addition), grid.Own),
+                            Does.Contain("signed with the identity key of the grid operator 'DE*SWJ' already"));
+
+                Assert.That(PendingAddition.WhyNotToSign(network,
+                                                         Addition(network, AsAdded(grid, json => json["signingKeys"] = new JArray(foreign.ToJSON(Embedded: true)))),
+                                                         grid.Own),
+                            Does.Contain($"the signing key '{foreign.Id}', which is not its own"));
+
+                Assert.That(PendingAddition.WhyNotToSign(network,
+                                                         Addition(network, AsAdded(grid), new POIGridOperator(GridOperator_Id.Parse("DE*XYZ"))),
+                                                         grid.Own),
+                            Does.Contain("changes the GridOperator 'DE*XYZ' as well"));
+
+                Assert.That(PendingAddition.WhyNotToSign(network,
+                                                         Addition(network, AsAdded(grid, json => json.Remove("identityKeys"))),
+                                                         grid.Own),
+                            Is.Not.Null);
+
             });
 
         }

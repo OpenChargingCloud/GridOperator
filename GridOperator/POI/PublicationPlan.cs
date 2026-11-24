@@ -157,12 +157,12 @@ namespace cloud.charging.open.GridOperator.POI
                 if (after is null || after.Type == JTokenType.Null)
                 {
                     changes.Add(RoamingNetworkChange.RemoveProperty(theirs, property, before));
-                    steps.  Add(new ("remove", nameof(POIGridOperator), goId, property, $"'{property}' of the grid operator is removed."));
+                    steps.  Add(new ("remove", nameof(protocols.WWCP.POI.GridOperator), goId, property, $"'{property}' of the grid operator is removed."));
                 }
                 else
                 {
                     changes.Add(RoamingNetworkChange.UpdateProperty(theirs, property, before, after));
-                    steps.  Add(new ("update", nameof(POIGridOperator), goId, property, $"'{property}' of the grid operator is set to {Short(after)}."));
+                    steps.  Add(new ("update", nameof(protocols.WWCP.POI.GridOperator), goId, property, $"'{property}' of the grid operator is set to {Short(after)}."));
                 }
 
             }

@@ -347,6 +347,20 @@ namespace cloud.charging.open.GridOperator.POI
 
         #endregion
 
+        #region SignWithIdentityKey(ChangeSet)
+
+        /// <summary>
+        /// The given change set, signed by this grid operator with its identity
+        /// key: the proof that it holds the identity key the change set enters.
+        /// Only for a change set PendingAddition.WhyNotToSign() has nothing
+        /// against.
+        /// </summary>
+        public RoamingNetworkChangeSet SignWithIdentityKey(RoamingNetworkChangeSet ChangeSet)
+
+            => ChangeSet.Sign(identityKey, IdentityKey.Id, COSEAlgorithm.ES512);
+
+        #endregion
+
         #region PartyJSON()
 
         /// <summary>
