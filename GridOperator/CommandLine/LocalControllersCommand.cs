@@ -128,7 +128,7 @@ namespace cloud.charging.open.GridOperator.CommandLine
             var logins = cli.GridOperator.OpenADR.Logins();
 
             if (logins.Count == 0)
-                return Task.FromResult<String[]>([ $"No local controller may sign in at {cli.GridOperator.OpenADRVTNURL} yet: '{CommandName} add <venName> <chargingPoolId> <gridConnectionPointId>' lets one." ]);
+                return Task.FromResult<String[]>([ $"No local controller may sign in at {cli.GridOperator.OpenADRVTNURLFor(null)} yet: '{CommandName} add <venName> <chargingPoolId> <gridConnectionPointId>' lets one." ]);
 
             var width = logins.Max(login => login.VENName.Length);
 
@@ -140,7 +140,7 @@ namespace cloud.charging.open.GridOperator.CommandLine
                                      (seen.HasValue ? $"last seen {seen.Value.ToLocalTime():HH:mm:ss}" : "not seen since this start") +
                                      (connections.Count > 0 ? $"; connects over {String.Join(" and ", connections.Select(connection => $"({connection})"))}" : "");
                           }),
-                       $"They sign in at {cli.GridOperator.OpenADRTokenURL}."
+                       $"They sign in at {cli.GridOperator.OpenADRTokenURLFor(null)}."
                    ]);
 
         }
@@ -266,7 +266,7 @@ namespace cloud.charging.open.GridOperator.CommandLine
 
             => [
                    Sentence,
-                   $"  token URL      {cli.GridOperator.OpenADRTokenURL}",
+                   $"  token URL      {cli.GridOperator.OpenADRTokenURLFor(null)}",
                    $"  client ID      {ClientId}",
                    $"  client secret  {Secret}"
                ];

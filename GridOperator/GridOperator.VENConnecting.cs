@@ -162,8 +162,6 @@ namespace cloud.charging.open.GridOperator
 
             #region Where it connects to: the port has to be there
 
-            var host = PublicHostOf(Request);
-
             String? hostKey = null;
 
             if (transport == "ws")
@@ -249,8 +247,8 @@ namespace cloud.charging.open.GridOperator
             }
 
             var url = transport == "ws"
-                      ? $"{(VENServerTLS ? "wss" : "ws")}://{host}:{(VENServerSettings.TCPPort ?? Configuration.VENServerConfiguration.DefaultTCPPort).ToUInt16()}/{Uri.EscapeDataString(login.ToString())}"
-                      : $"ssh://{Uri.EscapeDataString(login.ToString())}@{host}:{SSHPort!.Value.ToUInt16()}";
+                      ? VENWebSocketURL(Request, login.ToString())
+                      : VENSSHURL      (Request, login.ToString());
 
             #endregion
 

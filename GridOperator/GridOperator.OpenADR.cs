@@ -124,13 +124,18 @@ namespace cloud.charging.open.GridOperator
         /// <para>
         /// A Host that is no host - with a slash, an @ or a space in it - is
         /// not repeated: the listening address is said instead. A proxy that
-        /// puts the grid operator below a path of its own is not followed;
-        /// it serves it at the path the grid operator itself has.
+        /// puts the grid operator below a path of its own is not followed by
+        /// itself: "publicURLs.openADR" of the configuration says where the
+        /// VTN is then, and what it says is said whoever asked - and without
+        /// a request at all, at the command line.
         /// </para>
         /// </remarks>
         /// <param name="Request">An HTTP request.</param>
         public String OpenADRVTNURLFor(HTTPRequest? Request)
         {
+
+            if (PublicURLs.OpenADR is String publicURL)
+                return publicURL;
 
             if (Request is null)
                 return OpenADRVTNURL;

@@ -293,6 +293,9 @@ namespace cloud.charging.open.GridOperator
 
             #region The local controllers that connect over a WebSocket or over SSH
 
+            // Where they reach it, where that is not where it listens.
+            PublicURLs = ReadThePublicURLs();
+
             // Nothing listens yet - OnListening does. See GridOperator.VENs.cs.
             BuildVENServer();
 

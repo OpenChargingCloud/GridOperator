@@ -72,6 +72,26 @@ over SSH, the key it brought. The answer's `credentials` are named as the local 
 `vtnURL` and the URL of its connection to the grid operator, beside the `openADRBinding`, the login, the password
 and, over SSH, the `sshHostKey` it pins. Removing the connection, or the local controller, removes the login too.
 
+### Behind a reverse proxy
+
+The URLs a local controller is told - the `vtnURL` and `tokenURL` of the VTN, the URL of a connection over the
+WebSocket port or over SSH - are made of the name the request reached the grid operator by, as a trusted proxy says
+it or as the request's own Host says it, and of the path and the ports the grid operator has itself. Where a proxy
+puts it below a path of its own, takes the WebSockets on another port, or a firewall forwards another port to its
+SSH server, the section `publicURLs` of the configuration says where they are reached instead:
+
+```json
+"publicURLs": {
+    "openADR":   "https://grid.example/dso/openadr3/",
+    "webSocket": "wss://grid.example/dso/openadr-ws/",
+    "ssh":       "ssh://grid.example:2222"
+}
+```
+
+Each is said on its own, and one not said is made as before. What is said is what every local controller is told,
+whoever asked, and at the command line too; the login of a connection is the last segment of the path of
+`webSocket` and the user of `ssh`. It is read when the grid operator starts.
+
 
 ## Your participation
 
