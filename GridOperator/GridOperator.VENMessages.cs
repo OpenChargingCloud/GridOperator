@@ -66,8 +66,10 @@ namespace cloud.charging.open.GridOperator
     /// connected to -, and stands for the connection it was made over, by the
     /// connection this grid operator wrote down for it. A VEN that connects
     /// again comes in under the same connection, and is told over the new one.
-    /// While it is not in, what it would be told is lost: it reads what it
-    /// missed when it asks next.
+    /// While it is not in, what it would be told waits for it - at most
+    /// <see cref="NotificationsKeptPerConnection"/>, each for at most
+    /// <see cref="NotificationsKeptFor"/> - and is told in order once it
+    /// asked something over the new one.
     /// </para>
     /// </remarks>
     public partial class GridOperator
