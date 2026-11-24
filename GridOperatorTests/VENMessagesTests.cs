@@ -742,6 +742,55 @@ namespace cloud.charging.open.GridOperator.Tests
 
         #endregion
 
+        #region ASwitchedOffConnection_IsTurnedAwayForNow_AWrongPassword_ForGood()
+
+        /// <summary>
+        /// Over a WebSocket, a VEN that signs in rightly as a connection that is
+        /// switched off is turned away for now - 503 with a Retry-After, so that
+        /// it comes back by itself once its connection is on -, and one with a
+        /// wrong password for good - 401.
+        /// </summary>
+        [Test]
+        public async Task ASwitchedOffConnection_IsTurnedAwayForNow_AWrongPassword_ForGood()
+        {
+
+            var grid         = await AStartedGrid();
+
+            var switchedOff  = AVENThatConnects(grid, "ws", "lc-off", "lc-paradies", Enabled: false);
+            var right        = AVENThatConnects(grid, "ws", "lc-1",   "lc-nord");
+
+            async Task<HTTPResponse> Answer(String Login, String Password)
+            {
+
+                var client = new StreamWebSocketClient(URL.Parse($"ws://127.0.0.1:{venPort.ToUInt16()}/{Login}"), OpenADRWireNames.Subprotocol,
+                                                       HTTPBasicAuthentication.Create(Login, Password), null, null, null, null, null, null);
+
+                var (_, response) = await client.Connect();
+
+                await client.DisposeAsync();
+
+                return response;
+
+            }
+
+            var off    = await Answer("lc-off", switchedOff);
+            var wrong  = await Answer("lc-1",   "not-its-password");
+
+            Assert.Multiple(() => {
+
+                Assert.That(off.HTTPStatusCode,    Is.EqualTo(HTTPStatusCode.ServiceUnavailable), "A connection switched off was not turned away for now.");
+                Assert.That(off.RetryAfter,        Is.Not.Null.And.Not.Empty,                      "A connection switched off was not told when to try again.");
+                Assert.That(off.WWWAuthenticate,   Is.Null,                                        "A connection switched off was asked for other credentials.");
+
+                Assert.That(wrong.HTTPStatusCode,  Is.EqualTo(HTTPStatusCode.Unauthorized),       "A wrong password was not turned away for good.");
+                Assert.That(wrong.RetryAfter,      Is.Null.Or.Empty,                               "A wrong password was told to try again.");
+
+            });
+
+        }
+
+        #endregion
+
 
         #region AConnectionNoLongerWhatLetItIn_IsLetGoOf(Transport, Change)
 
