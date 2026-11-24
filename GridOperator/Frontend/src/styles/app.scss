@@ -98,6 +98,12 @@ ul.ven-list {
 
     li { padding: 0.15rem 0; }
 
+    // Taken away where it is shown, beside its login.
+    li.ven-connection > .btn {
+        margin-left:     0.4rem;
+        vertical-align:  middle;
+    }
+
     .chips {
         display:         inline-flex;
         vertical-align:  middle;
@@ -119,6 +125,12 @@ ul.ven-list {
 
     .kv { margin: 0.2rem 0; }
 
+}
+
+#new-connection-form textarea[name="sshKey"] {
+    width:        100%;
+    font-family:  $font-mono;
+    font-size:    0.8rem;
 }
 
 textarea.json-box {

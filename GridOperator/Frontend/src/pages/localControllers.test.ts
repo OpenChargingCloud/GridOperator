@@ -5,7 +5,7 @@
  * list, and gone after a Reload.
  */
 
-import { asked, field, leave, open, submit, type, until, type Asked } from '../../test/gridOperator.ts';
+import { asked, change, field, leave, open, submit, type, until, type Asked } from '../../test/gridOperator.ts';
 
 import { strict as assert }    from 'node:assert';
 import { after, describe, it } from 'node:test';
@@ -14,14 +14,48 @@ const { localControllersPage } = await import('./localControllers.ts');
 
 after(() => leave());
 
+globalThis.confirm = () => true;
+
 
 let controllers: Record<string, unknown>[] = [];
+let connectable = { ws: true, ssh: true };
+
+const listed = () => ({ tokenURL: 'http://127.0.0.1:2358/openadr3/auth/token', vtnURL: 'http://127.0.0.1:2358/openadr3/', connectable, localControllers: controllers });
 
 function gridOperator({ method, path, body }: Asked): unknown {
 
     if (path === '/gridConnectionPoints')
         return { gridOperatorId: 'DE*SWJ', voltageLevels: [], connectionTypes: [],
                  gridConnectionPoints: [ { '@id': 'GCP-1', localControllers: [], limits: [] } ] };
+
+    const connections = /^\/openADR\/localControllers\/([^/]+)\/connections(?:\/([^/]+))?$/.exec(path);
+
+    if (connections) {
+
+        const controller  = controllers.find(one => one['venName'] === decodeURIComponent(connections[1]!))!;
+        const its         = controller['connections'] as Record<string, unknown>[];
+
+        if (method === 'DELETE') {
+            controller['connections'] = its.filter(one => one['id'] !== decodeURIComponent(connections[2]!));
+            return listed();
+        }
+
+        const asked      = body as Record<string, string>;
+        const overSSH    = asked['transport'] === 'ssh';
+        const login      = String(controller['venName']);
+        const made       = { id: 'C9', login, description: null, transport: asked['transport'], binding: asked['binding'], enabled: true,
+                             status: null, said: null, since: null, in: false, notificationsWaiting: 0 };
+
+        its.push(made);
+
+        return { venName: login, ...made,
+                 credentials: { vtnURL:          overSSH ? `ssh://${login}@127.0.0.1:2222` : `ws://127.0.0.1:2363/${login}`,
+                                openADRBinding:  asked['binding'],
+                                login,
+                                ...(asked['sshKey'] ? {} : { password: 'the-password-said-once' }),
+                                ...(overSSH ? { sshHostKey: 'SHA256:theHostKeyOfTheGridOperator' } : {}) } };
+
+    }
 
     if (path !== '/openADR/localControllers')
         return undefined;
@@ -39,8 +73,14 @@ function gridOperator({ method, path, body }: Asked): unknown {
 
     }
 
-    return { tokenURL: 'http://127.0.0.1:2358/openadr3/auth/token', vtnURL: 'http://127.0.0.1:2358/openadr3/', localControllers: controllers };
+    return listed();
 
+}
+
+/** A local controller, as the grid operator lists it, without connections yet. */
+function aLocalController(VENName: string): Record<string, unknown> {
+    return { venID: 'V0', venName: VENName, chargingPoolId: 'DE*GEF*P1', gridConnectionPointId: 'GCP-1',
+             created: '2026-10-18T08:00:00Z', lastSeen: null, limits: [], reports: 0, connections: [], subscriptions: [], targets: [] };
 }
 
 
@@ -101,6 +141,9 @@ describe('the local controllers', () => {
         assert.match(subscriptions[0]!, /over its connection/);
         assert.match(subscriptions[1]!, /DELETE REPORT to the webhook https:\/\/lc\.example\.org\/hook/);
 
+        assert.equal(root.querySelectorAll('li.ven-connection button').length, 0, 'somebody who may only look may take a connection away');
+        assert.equal(root.querySelector('#new-connection-form'), null);
+
     });
 
     it('add one, say its secret once, and forget it on Reload', async () => {
@@ -124,6 +167,87 @@ describe('the local controllers', () => {
         root.querySelector<HTMLButtonElement>('.page-actions #reload')!.click();
 
         await until(() => root.querySelector('.secret-box') === null, 'the secret was said again after Reload');
+
+    });
+
+    it('let one connect over the WebSocket port, say its password once, and forget it on Reload', async () => {
+
+        controllers  = [ aLocalController('lc-paradies') ];
+        connectable  = { ws: true, ssh: false };
+
+        const root = await open(localControllersPage, '/openADR/localControllers', [ 'openadr:read', 'openadr:edit', 'poi:read' ],
+                                gridOperator, root => root.querySelector('#new-connection-form') !== null);
+
+        const transport = field<HTMLSelectElement>(root, '#new-connection-form', 'transport');
+
+        assert.equal(transport.value, 'ws');
+        assert.ok(transport.querySelector<HTMLOptionElement>('option[value="ssh"]')!.disabled, 'SSH is offered while it is switched off');
+
+        submit(root, '#new-connection-form');
+
+        await until(() => root.querySelector('.connection-box') !== null, 'what it connects with was not said');
+
+        const box = root.querySelector('.connection-box')!.textContent!.replace(/\s+/g, ' ');
+
+        assert.match(box, /its password is said this once/);
+        assert.match(box, /ws:\/\/127\.0\.0\.1:2363\/lc-paradies/);
+        assert.match(box, /Password the-password-said-once/);
+        assert.doesNotMatch(box, /SSH host key/);
+        assert.deepEqual(asked.find(one => one.method === 'POST' && one.path.endsWith('/connections'))?.body,
+                         { transport: 'ws', binding: 'messages' });
+        assert.equal(root.querySelectorAll('li.ven-connection').length, 1, 'the connection made is not shown below its local controller');
+
+        root.querySelector<HTMLButtonElement>('.page-actions #reload')!.click();
+
+        await until(() => root.querySelector('.connection-box') === null, 'the password was said again after Reload');
+
+    });
+
+    it('let one connect over SSH with its key, say the host key, and take the connection away', async () => {
+
+        controllers  = [ aLocalController('lc-paradies') ];
+        connectable  = { ws: true, ssh: true };
+
+        const root = await open(localControllersPage, '/openADR/localControllers', [ 'openadr:read', 'openadr:edit', 'poi:read' ],
+                                gridOperator, root => root.querySelector('#new-connection-form') !== null);
+
+        change(field<HTMLSelectElement>(root, '#new-connection-form', 'transport'), 'ssh');
+        change(field<HTMLSelectElement>(root, '#new-connection-form', 'binding'),   'rest');
+        type  (field<HTMLTextAreaElement>(root, '#new-connection-form', 'sshKey'),  'ssh-ed25519 AAAAC3Nz lc-paradies');
+        submit(root, '#new-connection-form');
+
+        await until(() => root.querySelector('.connection-box') !== null, 'what it connects with was not said');
+
+        const box = root.querySelector('.connection-box')!.textContent!.replace(/\s+/g, ' ');
+
+        assert.match(box, /it signs in with its SSH key/);
+        assert.match(box, /ssh:\/\/lc-paradies@127\.0\.0\.1:2222/);
+        assert.match(box, /SSH host key SHA256:theHostKeyOfTheGridOperator/);
+        assert.doesNotMatch(box, /Password/);
+        assert.deepEqual(asked.find(one => one.method === 'POST' && one.path.endsWith('/connections'))?.body,
+                         { transport: 'ssh', binding: 'rest', sshKey: 'ssh-ed25519 AAAAC3Nz lc-paradies' });
+
+        await until(() => root.querySelector('li.ven-connection[data-id="C9"] button') !== null, 'the connection made has no way to be taken away');
+
+        root.querySelector<HTMLButtonElement>('li.ven-connection[data-id="C9"] button')!.click();
+
+        await until(() => root.querySelector('li.ven-connection') === null, 'the connection was not taken away');
+
+        assert.ok(asked.some(one => one.method === 'DELETE' && one.path === '/openADR/localControllers/lc-paradies/connections/C9'));
+        assert.equal(root.querySelector('.connection-box'), null, 'what a connection taken away connected with is still said');
+
+    });
+
+    it('say how to switch them on where neither way is', async () => {
+
+        controllers  = [ aLocalController('lc-paradies') ];
+        connectable  = { ws: false, ssh: false };
+
+        const root = await open(localControllersPage, '/openADR/localControllers', [ 'openadr:read', 'openadr:edit', 'poi:read' ],
+                                gridOperator, root => root.querySelector('table.grid-table') !== null);
+
+        assert.equal(root.querySelector('#new-connection-form'), null);
+        assert.match(root.textContent!, /webSocketServer\.enabled/);
 
     });
 

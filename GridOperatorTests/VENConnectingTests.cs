@@ -271,6 +271,9 @@ namespace cloud.charging.open.GridOperator.Tests
             (status, json) = await Send(admin, HttpMethod.Get, "api/v1/openADR/localControllers");
             Assert.That(status, Is.EqualTo(HttpStatusCode.OK));
 
+            Assert.That(json["connectable"]?["ws"]?.Value<Boolean>(),  Is.True);
+            Assert.That(json["connectable"]?["ssh"]?.Value<Boolean>(), Is.True);
+
             var connections = json["localControllers"]![0]!["connections"] as JArray;
 
             Assert.That(connections?.Select(connection => connection["login"]?.Value<String>()), Is.EquivalentTo(new[] { "lc-paradies", "lc-paradies-ssh" }));
@@ -436,6 +439,8 @@ namespace cloud.charging.open.GridOperator.Tests
         {
 
             var grid = await AStartedGrid(WebSocketServer: false);
+
+            Assert.That(grid.VENConnectableJSON().ToString(Newtonsoft.Json.Formatting.None), Is.EqualTo("""{"ws":false,"ssh":false}"""));
 
             Assert.That(grid.TryConnectLocalController("lc-paradies", new JObject(new JProperty("transport", "ws")),  "test", null, out _, out var error, out var refusal), Is.False);
             Assert.That(refusal, Is.EqualTo(ChangeRefusal.Conflict));

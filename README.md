@@ -65,7 +65,8 @@ POST   /api/v1/openADR/localControllers/<VEN name>/connections       { "transpor
 DELETE /api/v1/openADR/localControllers/<VEN name>/connections/<id>
 ```
 
-or `localControllers connect <VEN name> ws|ssh [messages|rest] [<ssh key>]` at the command line. A connection of
+or `localControllers connect <VEN name> ws|ssh [messages|rest] [<ssh key>]` at the command line, or the form on the page of
+the local controllers, where each connection can be taken away again. A connection of
 the type VEN is written down for it and a login it comes under, with a password made then and said once - or,
 over SSH, the key it brought. The answer's `credentials` are named as the local controller has them: the URL is its
 `vtnURL` and the URL of its connection to the grid operator, beside the `openADRBinding`, the login, the password

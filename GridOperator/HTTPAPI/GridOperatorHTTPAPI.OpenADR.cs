@@ -60,6 +60,7 @@ namespace cloud.charging.open.GridOperator
                        JSONResponse(Request, HTTPStatusCode.OK, new JObject(
                            new JProperty("tokenURL",          GridOperator.OpenADRTokenURLFor(Request)),
                            new JProperty("vtnURL",            GridOperator.OpenADRVTNURLFor(Request)),
+                           new JProperty("connectable",       GridOperator.VENConnectableJSON()),
                            new JProperty("localControllers",  new JArray(GridOperator.OpenADR.Logins().Select(GridOperator.LocalControllerJSON)))
                        ))
                    );

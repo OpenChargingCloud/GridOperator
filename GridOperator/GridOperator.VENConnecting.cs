@@ -370,6 +370,21 @@ namespace cloud.charging.open.GridOperator
 
         #endregion
 
+        #region VENConnectableJSON()
+
+        /// <summary>
+        /// Over which ways a local controller may be let connect now, as the
+        /// page of the local controllers offers them: { "ws", "ssh" }.
+        /// </summary>
+        public JObject VENConnectableJSON()
+
+            => new (
+                   new JProperty("ws",   VENServerSettings.IsEnabled),
+                   new JProperty("ssh",  VENServerSettings.TakesSSH && SSHPort is not null)
+               );
+
+        #endregion
+
         #region VENConnectionMadeJSON(Made)
 
         /// <summary>

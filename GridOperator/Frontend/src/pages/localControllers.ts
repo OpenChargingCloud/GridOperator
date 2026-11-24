@@ -1,4 +1,4 @@
-import { api, type GridConnectionPoints, type LocalController, type LocalControllers, type VENConnection } from '../api/client';
+import { api, type GridConnectionPoints, type LocalController, type LocalControllers, type NewVENConnection, type VENConnection, type VENConnectionMade } from '../api/client';
 import { auth } from '../auth';
 import { dayAndTime } from '../grid/words';
 import { toURL } from '@node/basePath';
@@ -20,6 +20,12 @@ import { html, nothing, render, repeat } from '@node/view';
  * Whoever may adds one; its secret is made then and said once, in a box above
  * the list, together with where it signs in - and kept nowhere but as a hash.
  * A secret lost is a new one made, which the old one stops working with.
+ *
+ * Whoever may lets one connect, too - over the WebSocket port of OpenADR or
+ * over SSH, in messages or REST in a tunnel: a connection and a login are
+ * written down for it, and what it connects with is said once in the same way,
+ * the password made for it or, over SSH, the key it brought. A connection is
+ * taken away below the local controller it is of, and its login with it.
  */
 export const localControllersPage: Page = {
 
@@ -45,14 +51,20 @@ export const localControllersPage: Page = {
         /** The local controller whose secret was just made, said once - until the page is left or reloaded. */
         let justMade:  LocalController | null = null;
 
+        /** The connection just made, with its password said once - until the page is left or reloaded. */
+        let justConnected: VENConnectionMade | null = null;
+
 
         function draw(): void {
 
             if (current === null)
                 return;
 
-            const all       = current;
-            const pointIds  = (points?.gridConnectionPoints ?? []).map(point => point['@id']);
+            const all          = current;
+            const pointIds     = (points?.gridConnectionPoints ?? []).map(point => point['@id']);
+            // A grid operator that does not say: both offered, and it says no where it must.
+            const connectable  = all.connectable ?? { ws: true, ssh: true };
+            const made         = justConnected;
 
             render(content, html`
 
@@ -71,6 +83,31 @@ export const localControllersPage: Page = {
                             <button type="button" class="btn small" @click=${copySecret}>Copy the secret</button>
                             <span id="secret-note" class="form-notice" role="status"></span>
                         </div>
+                    </div>
+                ` : nothing}
+
+                ${made ? html`
+                    <div class="secret-box connection-box" role="status">
+                        <strong>What ${made.venName} connects with - ${made.credentials.password ? 'its password is said this once' : 'it signs in with its SSH key'}:</strong>
+                        <div class="kv"><span class="k">URL</span>            <span class="v mono">${made.credentials.vtnURL}</span></div>
+                        <div class="kv"><span class="k">Binding</span>        <span class="v mono">${made.credentials.openADRBinding}</span></div>
+                        <div class="kv"><span class="k">Login</span>          <span class="v mono">${made.credentials.login}</span></div>
+                        ${made.credentials.password ? html`
+                            <div class="kv"><span class="k">Password</span>   <span class="v mono">${made.credentials.password}</span></div>
+                        ` : nothing}
+                        ${made.credentials.sshHostKey ? html`
+                            <div class="kv"><span class="k">SSH host key</span> <span class="v mono">${made.credentials.sshHostKey}</span></div>
+                        ` : nothing}
+                        <span class="hint">
+                            At the local controller the URL is its VTN URL, and the URL of its connection to this grid operator,
+                            of the type GridOperator, in this binding${made.credentials.sshHostKey ? ', pinning this host key' : ''}.
+                        </span>
+                        ${made.credentials.password ? html`
+                            <div class="form-actions">
+                                <button type="button" class="btn small" @click=${copyPassword}>Copy the password</button>
+                                <span id="password-note" class="form-notice" role="status"></span>
+                            </div>
+                        ` : nothing}
                     </div>
                 ` : nothing}
 
@@ -183,6 +220,71 @@ export const localControllersPage: Page = {
                         </section>
                     ` : nothing}
 
+                    ${mayChange && all.localControllers.length > 0 ? html`
+                        <section class="card wide">
+
+                            <h2><i class="fa-solid fa-plug"></i> Let a local controller connect</h2>
+
+                            ${!connectable.ws && !connectable.ssh ? html`
+                                <p class="muted">
+                                    Neither the WebSocket port of OpenADR nor OpenADR over SSH is switched on:
+                                    <span class="mono">webSocketServer.enabled</span> - and its <span class="mono">ssh.enabled</span>,
+                                    with the SSH server of this grid operator - in the configuration switch them on.
+                                </p>
+                            ` : html`
+                                <form id="new-connection-form" class="form-stack" @submit=${connect}>
+
+                                    <div class="form-grid">
+
+                                        <label>Local controller
+                                            <select name="venName">
+                                                ${all.localControllers.map(controller => html`<option value="${controller.venName}">${controller.venName}</option>`)}
+                                            </select>
+                                        </label>
+
+                                        <label>Over
+                                            <select name="transport">
+                                                <option value="ws"  ?disabled=${!connectable.ws}  ?selected=${connectable.ws}>the WebSocket port${connectable.ws  ? '' : ' - switched off'}</option>
+                                                <option value="ssh" ?disabled=${!connectable.ssh} ?selected=${!connectable.ws}>SSH${connectable.ssh ? '' : ' - switched off'}</option>
+                                            </select>
+                                        </label>
+
+                                        <label>Binding
+                                            <select name="binding">
+                                                <option value="messages" selected>messages</option>
+                                                <option value="rest">REST in a tunnel</option>
+                                            </select>
+                                        </label>
+
+                                        <label>Description
+                                            <input type="text" name="description" maxlength="200" />
+                                        </label>
+
+                                    </div>
+
+                                    <label>SSH key
+                                        <textarea name="sshKey" rows="2" class="mono" placeholder="ssh-ed25519 AAAA... lc-paradies"></textarea>
+                                    </label>
+
+                                    <div class="form-actions">
+                                        <button type="submit" class="btn primary">Connect</button>
+                                        <span id="new-connection-note"  class="form-notice" role="status"></span>
+                                        <span id="new-connection-error" class="form-error"  role="alert"></span>
+                                    </div>
+
+                                    <span class="hint">
+                                        A password is made for it and said once - or, over SSH, it signs in with the key given here,
+                                        one line of an authorized_keys file. It comes under its VEN name, or its VEN name and the way
+                                        where that is taken. Messages are the JSON messages of OpenADR; REST in a tunnel is the VTN's
+                                        REST API through the connection.
+                                    </span>
+
+                                </form>
+                            `}
+
+                        </section>
+                    ` : nothing}
+
                 </div>
 
             `);
@@ -217,6 +319,9 @@ export const localControllersPage: Page = {
                                         ` : nothing}
                                     </span>
                                     <span class="mono">${connection.login ?? connection.id}</span>
+                                    ${mayChange ? html`
+                                        <button type="button" class="btn small danger" @click=${() => disconnect(Controller, connection)}>Take away</button>
+                                    ` : nothing}
                                     ${connection.said ? html`<div class="small muted">${connection.said}</div>` : nothing}
                                 </li>
                             `)}
@@ -269,6 +374,80 @@ export const localControllersPage: Page = {
         async function copySecret(): Promise<void> {
             if (justMade?.credentials)
                 must<HTMLElement>(content, '#secret-note').textContent = await copyText(justMade.credentials.clientSecret);
+        }
+
+
+        async function copyPassword(): Promise<void> {
+            if (justConnected?.credentials.password)
+                must<HTMLElement>(content, '#password-note').textContent = await copyText(justConnected.credentials.password);
+        }
+
+
+        async function connect(event: SubmitEvent): Promise<void> {
+
+            event.preventDefault();
+
+            const form         = event.currentTarget as HTMLFormElement;
+            const note         = must<HTMLElement>(content, '#new-connection-note');
+
+            const venName      = field(form, 'venName');
+            const transport    = field(form, 'transport') as NewVENConnection['transport'];
+            const binding      = field(form, 'binding')   as NewVENConnection['binding'];
+            const sshKey       = field(form, 'sshKey');
+            const description  = field(form, 'description');
+
+            note.textContent = '';
+            must<HTMLElement>(content, '#new-connection-error').textContent = '';
+
+            try
+            {
+
+                const made = await whileSaving(content, note, () => api.openADR.connect(venName, {
+                                                                     transport,
+                                                                     binding,
+                                                                     ...(sshKey.     length > 0 ? { sshKey }      : {}),
+                                                                     ...(description.length > 0 ? { description } : {})
+                                                                 }));
+
+                if (cancelled)
+                    return;
+
+                justConnected = made;
+
+                await load();
+                form.reset();
+
+            }
+            catch (problem)
+            {
+                must<HTMLElement>(content, '#new-connection-error').textContent = errorMessage(problem);
+            }
+
+        }
+
+
+        async function disconnect(Controller: LocalController, Connection: VENConnection): Promise<void> {
+
+            if (!confirm(`Take the connection ${Connection.login ?? Connection.id} of ${Controller.venName} away? Whatever is in over it is let go of, and the login it came under is removed with it.`))
+                return;
+
+            try
+            {
+
+                current = await api.openADR.disconnect(Controller.venName, Connection.id);
+
+                if (justConnected?.id === Connection.id)
+                    justConnected = null;
+
+                if (!cancelled)
+                    draw();
+
+            }
+            catch (problem)
+            {
+                must<HTMLElement>(content, '#list-error').textContent = errorMessage(problem);
+            }
+
         }
 
 
@@ -347,6 +526,9 @@ export const localControllersPage: Page = {
                 if (justMade?.venName === Controller.venName)
                     justMade = null;
 
+                if (justConnected?.venName === Controller.venName)
+                    justConnected = null;
+
                 if (!cancelled)
                     draw();
 
@@ -386,7 +568,8 @@ export const localControllersPage: Page = {
 
         async function reload(): Promise<void> {
 
-            justMade = null;
+            justMade       = null;
+            justConnected  = null;
 
             await load();
 
@@ -395,7 +578,8 @@ export const localControllersPage: Page = {
 
         }
 
-        const release = unsaved.heldBy(() => typedSinceDrawn(content.querySelector('#new-local-controller-form')));
+        const release = unsaved.heldBy(() => typedSinceDrawn(content.querySelector('#new-local-controller-form')) ||
+                                             typedSinceDrawn(content.querySelector('#new-connection-form')));
 
         void load();
 

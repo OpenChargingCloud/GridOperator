@@ -256,7 +256,28 @@ export interface LocalController {
 export interface LocalControllers {
     tokenURL:          string;
     vtnURL:            string;
+    /** Over which ways a local controller may be let connect now: the WebSocket port of OpenADR, SSH. */
+    connectable?:      { ws: boolean; ssh: boolean };
     localControllers:  LocalController[];
+}
+
+/** A connection to be made for a local controller: over the WebSocket port or SSH, in a binding of OpenADR. */
+export interface NewVENConnection {
+    transport:     'ws' | 'ssh';
+    binding:       'messages' | 'rest';
+    /** Over SSH: its public key, as one line of an authorized_keys file - rather than a password made. */
+    sshKey?:       string;
+    description?:  string;
+}
+
+/**
+ * A connection made for a local controller, and what it connects with - named
+ * as the local controller has them: the URL is its "vtnURL" and the URL of its
+ * connection to the grid operator. The password is said this once.
+ */
+export interface VENConnectionMade extends VENConnection {
+    venName:      string;
+    credentials:  { vtnURL: string; openADRBinding: 'messages' | 'rest'; login: string; password?: string; sshHostKey?: string };
 }
 
 /** A local controller to be added. */
@@ -324,6 +345,8 @@ export const api = {
         addLocalController: (json: NewLocalController) => request<LocalController> ('POST',   '/openADR/localControllers', json),
         newSecret:         (name: string)            => request<LocalController>   ('POST',   `${lc(name)}/secret`, {}),
         removeLocalController: (name: string)        => request<LocalControllers>  ('DELETE', lc(name)),
+        connect:           (name: string, json: NewVENConnection) => request<VENConnectionMade> ('POST', `${lc(name)}/connections`, json),
+        disconnect:        (name: string, id: string) => request<LocalControllers> ('DELETE', `${lc(name)}/connections/${encodeURIComponent(id)}`),
         limits:            ()                        => request<Limits>            ('GET',    '/openADR/limits'),
         sendLimit:         (json: NewLimit)          => request<Limit>             ('POST',   '/openADR/limits', json),
         cancelLimit:       (id: string)              => request<Limits>            ('DELETE', `/openADR/limits/${encodeURIComponent(id)}`),
