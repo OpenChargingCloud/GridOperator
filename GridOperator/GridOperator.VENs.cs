@@ -323,7 +323,8 @@ namespace cloud.charging.open.GridOperator
             WebSocketLogins  = new WebSocketLogins(
                                    Path.Combine(directory, WebSocketLogins.DefaultFileName),
                                    TimeProvider,
-                                   NodeNoun
+                                   NodeNoun,
+                                   LoginNoun: "local controller"
                                );
 
             WebSocketLogins.OnNotice += (level, message) => Log.Log(level, message, "openadr", "ven", "auth");

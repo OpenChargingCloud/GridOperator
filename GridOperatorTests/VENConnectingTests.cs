@@ -289,15 +289,22 @@ namespace cloud.charging.open.GridOperator.Tests
 
         /// <summary>
         /// Over SSH, in the binding of messages, the password said lets the
-        /// local controller into the subsystem of OpenADR.
+        /// local controller into the subsystem of OpenADR - and what its
+        /// login says calls it a local controller, not a charging station.
         /// </summary>
         [Test]
         public async Task OverSSHThePasswordSaidLetsItIn()
         {
 
             var grid = await AStartedGrid();
+            var said = new List<String>();
+
+            grid.WebSocketLogins.OnNotice += (_, message) => said.Add(message);
 
             Assert.That(grid.TryConnectLocalController("lc-paradies", new JObject(new JProperty("transport", "ssh")), "test", null, out var made, out var error, out _), Is.True, error);
+
+            Assert.That(said, Has.Some.StartsWith("The local controller 'lc-paradies' may now sign in"));
+            Assert.That(said, Has.None.Contains("charging station"));
 
             Assert.That(made.Login,    Is.EqualTo("lc-paradies"));
             Assert.That(made.Password, Is.Not.Null);
