@@ -15,6 +15,44 @@ import { gridOperatorPage } from './pages/gridOperator';
 import { limitsPage } from './pages/limits';
 import { localControllersPage } from './pages/localControllers';
 import { roamingNetworkPage } from './pages/roamingNetwork';
+import { venServerPage } from './pages/venServer';
+
+import { connectionsPage }      from '@node/connecting/pages/connections';
+import { clientTrustPage }      from '@node/connecting/pages/clientTrust';
+import { webSocketLoginsPage }  from '@node/connecting/pages/webSocketLogins';
+import { setConnectionsResource, setLoginServer, setNodeNoun, setNodeTraits, setStationsResource } from '@node/connecting/settings';
+
+// The local controllers that connect over a WebSocket or SSH - their VENs,
+// speaking OpenADR over the connection, the REST API in a tunnel or in
+// messages. Each is written down twice, as everybody who connects to a node
+// is: as a connection of the type "VEN", which lets it in and says its
+// binding and the VEN it is taken as, and as a login, which says what it
+// signs in with. Both are drawn by the pages every node with a WebSocket
+// server draws them with - WWCP_Node's connecting/ -, told here that they are
+// a grid operator's: below "/configuration/ven-server", at the resource
+// "openadr", and of local controllers, which speak OpenADR and know nothing
+// of OCPP's security profiles.
+setConnectionsResource('openadr');
+setStationsResource('openadr');
+setNodeNoun('grid operator');
+setNodeTraits({ oneNodePerOCPPVersion: false, isConnectedTo: true, connectsDown: false,
+                examples: { description: 'The local controller of the Paradies', url: 'wss://gridoperator.example.org:2365/lc-paradies' } });
+setLoginServer({
+    root:              '/configuration/ven-server',
+    page:              '/configuration/ven-server',
+    loginsPage:        '/configuration/ven-server/logins',
+    trustPage:         '/configuration/ven-server/trust',
+    login:             'local controller',
+    logins:            'local controllers',
+    who:               'the local controllers of the charging pools on this grid, as their VENs',
+    example:           'lc-paradies',
+    describedAs:       'Local controller Paradies',
+    protocol:          'OpenADR',
+    icon:              'fa-charging-station',
+    securityProfiles:  false,
+    sshChannels:       false,
+    allowedOf:         Server => (Server as { configuration?: { clientAuthentication?: ('httpAuthWithoutTLS' | 'httpAuthOverTLS' | 'tlsClientCertificate')[] } }).configuration?.clientAuthentication ?? []
+});
 
 // What a grid operator has pages for of its own: the grid operator it is in
 // POI 3, its grid connection points, and OpenADR - the local controllers of
@@ -39,6 +77,11 @@ startNode({
             nodeMenu.nts,
             nodeMenu.ssh,
             nodeMenu.certificates,
+            // Who may connect as a local controller over a WebSocket or SSH, and with what.
+            { path: '/configuration/ven-server',         label: 'VEN server',        icon: 'fa-tower-cell',     permission: [ 'openadr:read' ] },
+            { path: '/configuration/ven-server/logins',  label: 'WebSocket logins',  icon: 'fa-users-gear',     permission: [ 'openadr:read' ] },
+            { path: '/configuration/ven-server/trust',   label: 'Accepted chains',   icon: 'fa-user-shield',    permission: [ 'certificates:read' ] },
+            { path: '/configuration/connections',        label: 'Connections',       icon: 'fa-network-wired',  permission: [ 'openadr:read' ] },
             nodeMenu.identities,
             // What the web interface shows over HTTPS, where the "web"
             // section says "tls": { "certificate": "store" }.
@@ -76,8 +119,12 @@ startNode({
         '/openADR/limits':                limitsPage,
         '/openADR/localControllers':      localControllersPage,
 
-        '/configuration':                 configurationPage,
-        '/configuration/roamingNetwork':  roamingNetworkPage
+        '/configuration':                    configurationPage,
+        '/configuration/roamingNetwork':     roamingNetworkPage,
+        '/configuration/ven-server':         venServerPage,
+        '/configuration/ven-server/logins':  webSocketLoginsPage,
+        '/configuration/ven-server/trust':   clientTrustPage,
+        '/configuration/connections':        connectionsPage
 
     }
 

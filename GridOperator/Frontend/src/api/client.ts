@@ -354,3 +354,40 @@ export const api = {
     }
 
 };
+
+
+/**
+ * The WebSocket server the local controllers connect to - their VENs,
+ * speaking OpenADR over the connection: the REST API in a tunnel, or in
+ * messages -, as the grid operator answers at "/configuration/ven-server".
+ * Its logins, their groups and the chains a client certificate may lead to
+ * are every WebSocket server's, below it: see WWCP_Node's
+ * connecting/api/webSocketLogins.
+ */
+export interface VENServer {
+    /** The "webSocketServer" section, every field filled in: "enabled", "port", "clientAuthentication", "ssh", ... */
+    configuration:  {
+        enabled?:               boolean;
+        address?:               string;
+        port?:                  number;
+        clientAuthentication?:  ('httpAuthWithoutTLS' | 'httpAuthOverTLS' | 'tlsClientCertificate')[];
+        checkCertificateRevocation?: boolean;
+        ssh?:                   { enabled: boolean };
+    };
+    state: {
+        /** Whether the WebSocket server is listening. */
+        running:  boolean;
+        /** Whether its port speaks TLS. */
+        tls:      boolean;
+        /** Whether OpenADR is served over SSH, on the grid operator's SSH server. */
+        ssh:      boolean;
+        sshPort:  number | null;
+    };
+    /** The logins connected now, over a WebSocket or SSH. */
+    connected:  string[];
+}
+
+/** How the server of the local controllers is asked. Changed in the file, and nowhere else. */
+export const venServerAPI = {
+    get: () => request<VENServer>('GET', '/configuration/ven-server')
+};

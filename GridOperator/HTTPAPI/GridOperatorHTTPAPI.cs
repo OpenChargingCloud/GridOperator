@@ -92,6 +92,7 @@ namespace cloud.charging.open.GridOperator
             this.GridOperator = GridOperator;
 
             RegisterURLTemplates();
+            RegisterVENServerURLTemplates();
 
         }
 

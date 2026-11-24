@@ -8,6 +8,11 @@
     $color-accent-dark:  #463a8f
 );
 
+// The local controllers that connect over a WebSocket or SSH - their
+// connections, logins and accepted chains - are drawn by the pages every node
+// with a WebSocket server shares, and look as they do there.
+@use '@node/connecting/styles/connections';
+
 
 // --- Tables ---------------------------------------------------------------
 
