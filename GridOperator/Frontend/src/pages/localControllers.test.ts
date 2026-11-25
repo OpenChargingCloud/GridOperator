@@ -126,13 +126,13 @@ describe('the local controllers', () => {
 
         const connection = (id: string) => root.querySelector(`li.ven-connection[data-id="${id}"]`)!.textContent!.replace(/\s+/g, ' ');
 
-        assert.match(connection('C1'), /wss messages on waiting 3 notification\(s\) waiting lc-paradies-messages/);
+        assert.match(connection('C1'), /wss messages on waiting 3 notifications waiting lc-paradies-messages/);
         assert.match(connection('C1'), /Waiting for 'lc-paradies-messages' to connect\./);
         assert.ok(root.querySelector('li.ven-connection[data-id="C1"] .chip.waiting.warn'), 'notifications that wait are not marked');
         assert.match(connection('C2'), /ssh REST in a tunnel on in now lc-paradies-rest/);
         assert.doesNotMatch(connection('C2'), /notification/, 'a connection of the REST API said notifications wait');
         assert.ok(root.querySelector('li.ven-connection[data-id="C2"] .chip.ok'), 'a connection in now is not marked as in');
-        assert.match(connection('C3'), /ws messages off waiting 0 notification\(s\) waiting lc-paradies-old/);
+        assert.match(connection('C3'), /ws messages off waiting 0 notifications waiting lc-paradies-old/);
 
         const subscriptions = [ ...root.querySelectorAll('li.ven-subscription') ].map(one => one.textContent!.replace(/\s+/g, ' '));
 

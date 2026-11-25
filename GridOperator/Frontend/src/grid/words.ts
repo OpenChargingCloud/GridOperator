@@ -60,3 +60,17 @@ export function stateWord(State: Limit['state']): string {
 export function listOf(Text: string): string[] {
     return Text.split(/[,\n]/).map(entry => entry.trim()).filter(entry => entry.length > 0);
 }
+
+/** More than one of what the given noun names: "local controllers", "authorities" - as WWCP_Node's NodeWording.Plural says it. */
+export function plural(Noun: string): string {
+    if (Noun.length > 1 && Noun.endsWith('y') && !'aeiou'.includes(Noun[Noun.length - 2]!))
+        return `${Noun.slice(0, -1)}ies`;
+    if (Noun.endsWith('s') || Noun.endsWith('x') || Noun.endsWith('ch') || Noun.endsWith('sh'))
+        return `${Noun}es`;
+    return `${Noun}s`;
+}
+
+/** How many of something there are: "1 limit", "0 limits", "3 local controllers" - not "(s)". */
+export function counted(Count: number, Noun: string): string {
+    return `${Count} ${Count === 1 ? Noun : plural(Noun)}`;
+}

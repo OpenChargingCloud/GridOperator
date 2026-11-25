@@ -264,7 +264,7 @@ namespace cloud.charging.open.GridOperator
                                          this,
                                          this.BasePath + OpenADRVTNAPI.PathSegment);
 
-            this.Log.Info($"{OpenADR.Logins().Count} local controller(s) may sign in at the OpenADR VTN, {OpenADR.Events().Count} limit(s) are kept in '{OpenADR.FilePath}'.",
+            this.Log.Info($"{Wording.Counted(OpenADR.Logins().Count, "local controller")} may sign in at the OpenADR VTN, {Wording.Counted(OpenADR.Events().Count, "limit")} {(OpenADR.Events().Count == 1 ? "is" : "are")} kept in '{OpenADR.FilePath}'.",
                           "openadr");
 
             #endregion

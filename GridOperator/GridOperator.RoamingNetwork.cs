@@ -224,7 +224,7 @@ namespace cloud.charging.open.GridOperator
                                                               ? AwaitingAcceptance(head.Value.Network, awaiting[0])
                                                               : NotAPartyYet(head.Value.Network)
                                        : plan.IsEmpty   ? $"The roaming network '{head.Value.Network.Id}' says of the grid operator '{Own.Id}' what this node says: nothing to publish."
-                                       :                  $"Publishing makes {plan.Changes.Count} change(s) in the roaming network '{head.Value.Network.Id}', signed by '{Own.Id}'.",
+                                       :                  $"Publishing makes {Wording.Counted(plan.Changes.Count, "change")} in the roaming network '{head.Value.Network.Id}', signed by '{Own.Id}'.",
                                          Plan:      plan,
                                          Revision:  head.Value.Revision,
                                          Awaiting:  awaiting);
@@ -311,12 +311,12 @@ namespace cloud.charging.open.GridOperator
                     var revision = answer?["revision"]?.Type == JTokenType.Integer ? answer["revision"]!.Value<Int64>() : (Int64?) null;
 
                     Log.Notice($"'{Who}' published the grid operator '{Own.Id}' to the roaming network '{network.Id}' at '{settings.URL}': " +
-                               $"{plan.Changes.Count} change(s), {answer?["status"] ?? response.HTTPStatusCode.ToString()}" +
+                               $"{Wording.Counted(plan.Changes.Count, "change")}, {answer?["status"] ?? response.HTTPStatusCode.ToString()}" +
                                (revision.HasValue ? $", revision {revision}." : "."),
                                "poi", "publication", "web");
 
                     return new PublicationResult(true,
-                                                 $"The roaming network '{network.Id}' took {plan.Changes.Count} change(s) signed by '{Own.Id}'" +
+                                                 $"The roaming network '{network.Id}' took {Wording.Counted(plan.Changes.Count, "change")} signed by '{Own.Id}'" +
                                                  (revision.HasValue ? $": it is at revision {revision} now." : "."),
                                                  Plan:      plan,
                                                  Revision:  revision ?? head.Value.Revision,

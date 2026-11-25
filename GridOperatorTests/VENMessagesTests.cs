@@ -929,9 +929,12 @@ namespace cloud.charging.open.GridOperator.Tests
                 Assert.That(told[0]["operation"]?.Value<String>(),      Is.EqualTo("CREATE"), "not in the order they came");
                 Assert.That(told[0]["object"]?["id"]?.Value<String>(),  Is.EqualTo(limit));
                 Assert.That(told[1]["operation"]?.Value<String>(),      Is.EqualTo("DELETE"), "not in the order they came");
-                Assert.That(grid.NotificationsWaitingFor(entry),        Is.Zero);
-                Assert.That(grid.NotificationsToldOverMessages,         Is.EqualTo(2));
             });
+
+            // A notification is let go of once its VEN answered it, which is a
+            // moment after the VEN has it: waited for, not looked at at once.
+            Assert.That(await WaitFor(() => grid.NotificationsWaitingFor(entry) == 0 && grid.NotificationsToldOverMessages == 2), Is.True,
+                        $"{grid.NotificationsWaitingFor(entry)} still wait{(grid.NotificationsWaitingFor(entry) == 1 ? "s" : "")}, {grid.NotificationsToldOverMessages} told.");
 
         }
 

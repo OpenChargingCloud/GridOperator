@@ -163,10 +163,10 @@ namespace cloud.charging.open.GridOperator.CommandLine
                 ways.Add("TOTP");
 
             if (Login.HasSSHKey)
-                ways.Add($"{Login.Keys.Count} SSH key(s)");
+                ways.Add(Wording.Counted(Login.Keys.Count, "SSH key"));
 
             if (Login.HasKeyPin)
-                ways.Add($"{Login.Pins.Count} key pin(s)");
+                ways.Add(Wording.Counted(Login.Pins.Count, "key pin"));
 
             return ways.Count > 0 ? ways : [ "nothing yet" ];
 

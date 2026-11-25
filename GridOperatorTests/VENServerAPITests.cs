@@ -364,7 +364,7 @@ namespace cloud.charging.open.GridOperator.Tests
 
             Assert.Multiple(() => {
                 Assert.That(listed, Has.Some.StartsWith("lc-1  on  not connected  the VEN 'lc-paradies', in messages"));
-                Assert.That(listed, Has.Some.Contains("signs in with 1 key pin(s)"));
+                Assert.That(listed, Has.Some.Contains("signs in with 1 key pin"));
             });
 
             var pins   = await cli.Execute("venPins");

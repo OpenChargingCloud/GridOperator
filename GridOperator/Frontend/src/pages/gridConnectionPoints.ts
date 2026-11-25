@@ -1,7 +1,7 @@
 import { api, type GridConnectionPoints } from '../api/client';
 import { auth } from '../auth';
 import { pointFields, pointFrom } from '../grid/pointForm';
-import { firstText, kW } from '../grid/words';
+import { counted, firstText, kW } from '../grid/words';
 import { toURL } from '@node/basePath';
 import { must } from '@node/html';
 import type { Page } from '@node/router';
@@ -56,7 +56,7 @@ export const gridConnectionPointsPage: Page = {
 
                     <section class="card wide">
 
-                        <h2><i class="fa-solid fa-plug"></i> ${all.gridConnectionPoints.length} grid connection point(s) of ${all.gridOperatorId}</h2>
+                        <h2><i class="fa-solid fa-plug"></i> ${counted(all.gridConnectionPoints.length, 'grid connection point')} of ${all.gridOperatorId}</h2>
 
                         ${all.gridConnectionPoints.length === 0 ? html`
                             <p class="muted">None yet: add the first one below.</p>

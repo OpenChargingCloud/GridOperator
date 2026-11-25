@@ -111,7 +111,7 @@ namespace cloud.charging.open.GridOperator.CommandLine
                               return $"{point.Id.ToString().PadRight(width)}  " +
                                      $"{json.Value<String>("voltageLevel") ?? "-",-16}  " +
                                      $"{(json["contractedImportPower"]?.Value<Double>() is Double watts ? $"{watts / 1000:0.###} kW" : "- kW"),12}  " +
-                                     $"{behind.Count} local controller(s)" +
+                                     Wording.Counted(behind.Count, "local controller") +
                                      (behind.Count > 0 ? $": {String.Join(", ", behind.Select(login => login.VENName))}" : "");
                           })
                    ]);

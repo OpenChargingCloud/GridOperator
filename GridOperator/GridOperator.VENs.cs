@@ -528,7 +528,7 @@ namespace cloud.charging.open.GridOperator
 
             Log.Notice(
                 $"The local controllers connect to {(venServerTLS ? "wss" : "ws")}://{venServerSettings.Address}:{venServerSettings.TCPPort}/<its name> " +
-                $"({(venServerTLS ? "TLS" : "unencrypted")}, {WebSocketLogins.EnabledCount} login(s), {ClientTrust.EnabledCount} accepted chain(s)).",
+                $"({(venServerTLS ? "TLS" : "unencrypted")}, {Wording.Counted(WebSocketLogins.EnabledCount, "login")}, {Wording.Counted(ClientTrust.EnabledCount, "accepted chain")}).",
                 "openadr", "ven"
             );
 

@@ -1,6 +1,6 @@
 import { api, type GridConnectionPoints, type Limit, type Limits, type OpenADRInfo, type Reports } from '../api/client';
 import { auth } from '../auth';
-import { dayAndTime, inKW, kindWord, stateWord } from '../grid/words';
+import { counted, dayAndTime, inKW, kindWord, stateWord } from '../grid/words';
 import { toURL } from '@node/basePath';
 import { must } from '@node/html';
 import type { Page } from '@node/router';
@@ -74,7 +74,7 @@ export const limitsPage: Page = {
                         <div class="kv"><span class="k">VTN</span>                <span class="v mono">${info.vtnURL}</span></div>
                         <div class="kv"><span class="k">Token</span>              <span class="v mono">${info.tokenURL}</span></div>
                         <div class="kv"><span class="k">Program</span>            <span class="v mono">${String(info.program['programName'] ?? '')}</span></div>
-                        <div class="kv"><span class="k">Local controllers</span>  <span class="v">${info.localControllers} <span class="muted">(${info.signedIn} token(s) signing in)</span></span></div>
+                        <div class="kv"><span class="k">Local controllers</span>  <span class="v">${info.localControllers} <span class="muted">(${counted(info.signedIn, 'token')} signing in)</span></span></div>
                         <div class="kv"><span class="k">Limits</span>             <span class="v">${info.activeLimits} active, ${info.scheduledLimits} scheduled</span></div>
 
                         <p class="small"><a href="${toURL('/openADR/localControllers')}">Local controllers</a></p>
@@ -140,7 +140,7 @@ export const limitsPage: Page = {
 
                     <section class="card wide">
 
-                        <h2><i class="fa-solid fa-list"></i> ${all.length} limit(s)</h2>
+                        <h2><i class="fa-solid fa-list"></i> ${counted(all.length, 'limit')}</h2>
 
                         ${all.length === 0 ? html`
                             <p class="muted">No limit was sent yet.</p>

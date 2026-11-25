@@ -80,7 +80,7 @@ namespace cloud.charging.open.GridOperator
                            "poi", "security");
 
             else
-                Log.Info($"This node is the grid operator '{Own.Id}', its keys in '{Directory}', with {Own.Entity.GridConnectionPoints.Count} grid connection point(s).",
+                Log.Info($"This node is the grid operator '{Own.Id}', its keys in '{Directory}', with {Wording.Counted(Own.Entity.GridConnectionPoints.Count, "grid connection point")}.",
                          "poi");
 
         }
@@ -378,8 +378,10 @@ namespace cloud.charging.open.GridOperator
 
             if (behind.Count > 0)
             {
-                Error    = $"The local controller(s) {String.Join(", ", behind.Select(login => $"'{login.VENName}'"))} are behind the grid connection point '{id}': " +
-                            "remove them first, or move their pools to another point.";
+                Error    = $"The {(behind.Count == 1 ? "local controller" : "local controllers")} {String.Join(", ", behind.Select(login => $"'{login.VENName}'"))} " +
+                           $"{(behind.Count == 1 ? "is" : "are")} behind the grid connection point '{id}': " +
+                           (behind.Count == 1 ? "remove it first, or move its pool to another point."
+                                              : "remove them first, or move their pools to another point.");
                 Refusal  = ChangeRefusal.Conflict;
                 return false;
             }

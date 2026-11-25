@@ -96,7 +96,7 @@ namespace cloud.charging.open.GridOperator.CommandLine
                        $"  signing key   {own.SigningKey. Id}  {own.SigningKey. ToJSON()["key"]}",
                        $"  identity key  {own.IdentityKey.Id}  {own.IdentityKey.ToJSON()["key"]}",
                        $"  its private keys are kept in '{own.Directory}'",
-                       $"  {entity.GridConnectionPoints.Count} grid connection point(s); 'gridConnectionPoints' lists them",
+                       $"  {Wording.Counted(entity.GridConnectionPoints.Count, "grid connection point")}; 'gridConnectionPoints' lists them",
                        cli.GridOperator.RoamingNetworkSettings.IsSet
                            ? $"  it publishes itself to {cli.GridOperator.RoamingNetworkSettings.URL}; 'publish' says what that would change"
                            : $"  it publishes itself to no roaming network; '{CommandName} party' is what its operator needs to add it"

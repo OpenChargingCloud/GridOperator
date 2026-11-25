@@ -148,7 +148,7 @@ namespace cloud.charging.open.GridOperator.CommandLine
                 json["gridConnectionPointId"] = Arguments[0];
 
             return cli.GridOperator.TrySendLimit(json, cli.Who, out var limit, out var error, out _)
-                       ? [ $"The limit '{limit.Id}', {limit.Kind} {kW.ToString(CultureInfo.InvariantCulture)} kW for {minutes} minute(s), was sent to {String.Join(", ", limit.VENNames)}." ]
+                       ? [ $"The limit '{limit.Id}', {limit.Kind} {kW.ToString(CultureInfo.InvariantCulture)} kW for {Wording.Counted(minutes, "minute")}, was sent to {String.Join(", ", limit.VENNames)}." ]
                        : [ error ];
 
         }

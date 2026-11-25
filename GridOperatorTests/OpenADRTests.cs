@@ -151,8 +151,9 @@ namespace cloud.charging.open.GridOperator.Tests
                 Assert.That(grid.TryAddLocalController(ALocalController("LC-NORD", "DE*GEF*P3", "GCP-3"),  "test", out _, out _, out _, out refusal), Is.False);
                 Assert.That(refusal, Is.EqualTo(ChangeRefusal.Conflict));
 
-                Assert.That(grid.TryRemoveGridConnectionPoint("GCP-1", "test", out _, out refusal), Is.False);
+                Assert.That(grid.TryRemoveGridConnectionPoint("GCP-1", "test", out error, out refusal), Is.False);
                 Assert.That(refusal, Is.EqualTo(ChangeRefusal.Conflict));
+                Assert.That(error,   Does.StartWith("The local controller 'lc-paradies' is behind the grid connection point 'GCP-1': remove it first"));
 
                 Assert.That(grid.TryRemoveGridConnectionPoint("GCP-3", "test", out error, out _), Is.True, error);
 

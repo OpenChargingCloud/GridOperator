@@ -1,5 +1,6 @@
 import { api, type Publication, type RoamingNetworkSettings } from '../api/client';
 import { auth } from '../auth';
+import { counted } from '../grid/words';
 import { toURL } from '@node/basePath';
 import { must } from '@node/html';
 import type { Page } from '@node/router';
@@ -196,7 +197,7 @@ export const roamingNetworkPage: Page = {
 
         async function publish(): Promise<void> {
 
-            if (!confirm(`Publish ${publication?.changes ?? 0} change(s) to ${current?.url}, signed by ${current?.gridOperatorId}?`))
+            if (!confirm(`Publish ${counted(publication?.changes ?? 0, 'change')} to ${current?.url}, signed by ${current?.gridOperatorId}?`))
                 return;
 
             await ask(() => api.roamingNetwork.publish(), 'Publishing ...');

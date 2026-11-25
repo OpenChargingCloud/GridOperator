@@ -649,7 +649,7 @@ namespace cloud.charging.open.GridOperator
                 return false;
             }
 
-            Log.Notice($"'{Who}' sent {kind} {limitKW} kW from {start.ToISO8601()} for {minutes} minute(s) to {forWhom.Count} local controller(s)" +
+            Log.Notice($"'{Who}' sent {kind} {limitKW} kW from {start.ToISO8601()} for {Wording.Counted(minutes, "minute")} to {Wording.Counted(forWhom.Count, "local controller")}" +
                        (pointId is not null ? $" behind the grid connection point '{pointId}'" : "") +
                        $": event '{gridEvent.Id}'.",
                        "openadr", "event", "web");
@@ -688,7 +688,7 @@ namespace cloud.charging.open.GridOperator
             }
 
             Log.Notice($"'{Who}' cancelled the limit '{gridEvent.Id}', {gridEvent.Kind} {gridEvent.LimitKW} kW, " +
-                       $"for {gridEvent.VENNames.Count} local controller(s).",
+                       $"for {Wording.Counted(gridEvent.VENNames.Count, "local controller")}.",
                        "openadr", "event", "web");
 
             NotifyOf(gridEvent, OpenADROperation.DELETE);

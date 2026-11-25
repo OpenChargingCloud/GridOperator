@@ -1,6 +1,6 @@
 import { api, type GridConnectionPoints, type LocalController, type LocalControllers, type NewVENConnection, type VENConnection, type VENConnectionMade } from '../api/client';
 import { auth } from '../auth';
-import { dayAndTime } from '../grid/words';
+import { counted, dayAndTime } from '../grid/words';
 import { toURL } from '@node/basePath';
 import { must } from '@node/html';
 import type { Page } from '@node/router';
@@ -115,7 +115,7 @@ export const localControllersPage: Page = {
 
                     <section class="card wide">
 
-                        <h2><i class="fa-solid fa-charging-station"></i> ${all.localControllers.length} local controller(s)</h2>
+                        <h2><i class="fa-solid fa-charging-station"></i> ${counted(all.localControllers.length, 'local controller')}</h2>
 
                         ${all.localControllers.length === 0 ? html`
                             <p class="muted">No local controller may sign in yet.</p>
@@ -315,7 +315,7 @@ export const localControllersPage: Page = {
                                         <span class="chip ${connection.enabled ? 'on' : ''}">${connection.enabled ? 'on' : 'off'}</span>
                                         <span class="chip ${statusClass(connection)}" title="${connection.said ?? ''}">${statusWord(connection)}</span>
                                         ${connection.binding === 'messages' ? html`
-                                            <span class="chip waiting ${connection.notificationsWaiting > 0 ? 'warn' : ''}">${connection.notificationsWaiting} notification(s) waiting</span>
+                                            <span class="chip waiting ${connection.notificationsWaiting > 0 ? 'warn' : ''}">${counted(connection.notificationsWaiting, 'notification')} waiting</span>
                                         ` : nothing}
                                     </span>
                                     <span class="mono">${connection.login ?? connection.id}</span>

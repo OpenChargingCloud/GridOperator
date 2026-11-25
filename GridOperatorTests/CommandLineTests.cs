@@ -135,7 +135,7 @@ namespace cloud.charging.open.GridOperator.Tests
             var points = await Run(cli, "gridConnectionPoints");
             Assert.That(points, Does.Contain("GCP-1"));
             Assert.That(points, Does.Contain("110 kW"));
-            Assert.That(points, Does.Contain("0 local controller(s)"));
+            Assert.That(points, Does.Contain("0 local controllers"));
 
             Assert.That(await Run(cli, "gridConnectionPoints GCP-1"),   Does.Contain("\"LowVoltage\""));
             Assert.That(await Run(cli, "gridConnectionPoints GCP-9"),   Does.Contain("has no grid connection point 'GCP-9'"));
@@ -149,7 +149,7 @@ namespace cloud.charging.open.GridOperator.Tests
             Assert.That(grid.OpenADR.Logins().Select(login => login.VENName), Is.EqualTo(new[] { "lc-paradies" }), added);
             Assert.That(added, Does.Contain("Its secret is said this once"));
 
-            Assert.That(await Run(cli, "gridConnectionPoints"),  Does.Contain("1 local controller(s): lc-paradies"));
+            Assert.That(await Run(cli, "gridConnectionPoints"),  Does.Contain("1 local controller: lc-paradies"));
             Assert.That(await Run(cli, "localControllers"),      Does.Contain("pool DE*GEF*P1, behind GCP-1, not seen since this start"));
 
             Assert.That(await Run(cli, "localControllers add lc-x DE*GEF*P9 nowhere"), Does.Not.Contain("may sign in now"));
