@@ -275,7 +275,7 @@ namespace cloud.charging.open.GridOperator.Tests
             #region What it writes
 
             var report = JObject.Parse($$"""
-                             { "programID": "{{GridOperator.ProgramName}}", "eventID": "{{mine.Id}}", "clientName": "somebody else",
+                             { "programID": "{{GridOperator.ProgramName}}", "eventID": "{{mine!.Id}}", "clientName": "somebody else",
                                "resources": [ { "resourceName": "pool", "intervals": [ { "id": 0, "payloads": [ { "type": "USAGE", "values": [ 41.5 ] } ] } ] } ] }
                          """);
 

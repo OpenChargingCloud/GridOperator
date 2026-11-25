@@ -643,8 +643,11 @@ namespace cloud.charging.open.GridOperator.Tests
                 Assert.That(told[0]["object"]?["targets"]?.Values<String>(),      Is.EquivalentTo(new[] { "ven:lc-paradies" }), "target hiding");
                 Assert.That(told[1]["operation"]?.Value<String>(),                Is.EqualTo("DELETE"));
                 Assert.That(nord!.Notified,                                       Is.Empty, "lc-nord was told of the limit of lc-paradies.");
-                Assert.That(grid.NotificationsToldOverMessages,                   Is.EqualTo(2));
             });
+
+            // Counted once lc-paradies answered, a moment after it has it: waited for.
+            Assert.That(await WaitFor(() => grid.NotificationsToldOverMessages == 2), Is.True,
+                        $"{grid.NotificationsToldOverMessages} told over messages, not 2.");
 
         }
 

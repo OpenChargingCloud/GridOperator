@@ -306,7 +306,7 @@ namespace cloud.charging.open.GridOperator.Tests
             Assert.That(said, Has.Some.StartsWith("The local controller 'lc-paradies' may now sign in"));
             Assert.That(said, Has.None.Contains("charging station"));
 
-            Assert.That(made.Login,    Is.EqualTo("lc-paradies"));
+            Assert.That(made!.Login,   Is.EqualTo("lc-paradies"));
             Assert.That(made.Password, Is.Not.Null);
 
             Assert.That(await InOverSSH(grid, made.Login, made.Password!),      Is.True,  "the password said did not let it in");
@@ -333,7 +333,7 @@ namespace cloud.charging.open.GridOperator.Tests
 
             Assert.That(grid.TryConnectLocalController("lc-paradies", new JObject(new JProperty("transport", "ssh"), new JProperty("sshKey", AKey)), "test", null, out var made, out error, out _), Is.True, error);
 
-            Assert.That(made.Password, Is.Null);
+            Assert.That(made!.Password, Is.Null);
             Assert.That(grid.WebSocketLogins.TryGet(User_Id.Parse(made.Login), out var login), Is.True);
             Assert.That(login!.ToString() + " " + grid.WebSocketLogins.ToJSON().ToString(), Does.Contain("AAAAC3NzaC1lZDI1NTE5AAAAIFPDfYBRyC5TX"));
 

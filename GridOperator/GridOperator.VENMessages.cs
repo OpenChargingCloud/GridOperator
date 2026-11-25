@@ -247,6 +247,13 @@ namespace cloud.charging.open.GridOperator
                                 $"and its connection speaks {spoken}: it is not let in.",
                                 "openadr", "ven", "auth");
 
+                    // As the door of WWCP_Node has it: a connection without
+                    // the request it came with is refused all the same.
+                    if (Connection.HTTPRequest is null)
+                        throw new InvalidOperationException(
+                                  $"'{entry.InboundName}' reached the WebSocket port of OpenADR without an HTTP request; refusing it."
+                              );
+
                     return new HTTPResponse.Builder(Connection.HTTPRequest) {
                                HTTPStatusCode  = HTTPStatusCode.BadRequest,
                                Server          = Server.HTTPServiceName,
