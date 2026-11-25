@@ -1,5 +1,7 @@
 # GridOperator
 
+![The EV charging test environment, the grid operator (GO) highlighted](docs/EVChargingTestEnvironment.svg)
+
 A grid operator - a distribution system operator (DSO) - in the OpenChargingCloud: a
 [WWCP_Node](https://github.com/OpenChargingCloud/WWCP_Node) with a JSON API below `/api`, a web interface at `/`
 and an OpenADR 3 VTN at `/openadr3`.
